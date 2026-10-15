@@ -23,9 +23,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.ministoreapp.data.local.entities.ProductEntity
 import com.example.ministoreapp.data.local.entities.RestockItemEntity
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +52,7 @@ fun SearchScreen(
         products.filter { product ->
             val matchesSearch = searchQuery.isBlank() ||
                 product.name.contains(searchQuery, ignoreCase = true) ||
+                product.aliases.contains(searchQuery, ignoreCase = true) ||
                 product.category.contains(searchQuery, ignoreCase = true) ||
                 product.brand.contains(searchQuery, ignoreCase = true) ||
                 (searchQuery.equals("Wholesale", ignoreCase = true) && (product.isWholesaleParent || (product.itemsPerWholesalePack ?: 0) > 0))
@@ -68,14 +71,14 @@ fun SearchScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(14.dp)
+            .padding(12.dp)
     ) {
         // Search Bar
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Search products, category, or 'Wholesale'...") },
+            placeholder = { Text("Search products, category, alias...", style = MaterialTheme.typography.bodyMedium) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
@@ -92,7 +95,7 @@ fun SearchScreen(
             singleLine = true
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Category Filter Chips
         LazyRow(
@@ -103,13 +106,13 @@ fun SearchScreen(
                 FilterChip(
                     selected = activeCategoryFilter == category,
                     onClick = { activeCategoryFilter = category },
-                    label = { Text(category, fontWeight = FontWeight.SemiBold) },
+                    label = { Text(category, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold) },
                     shape = RoundedCornerShape(12.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         if (filteredProducts.isEmpty()) {
             Box(
@@ -119,7 +122,7 @@ fun SearchScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
                         modifier = Modifier
-                            .size(60.dp)
+                            .size(56.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                         contentAlignment = Alignment.Center
@@ -127,11 +130,11 @@ fun SearchScreen(
                         Icon(
                             imageVector = Icons.Default.FilterList,
                             contentDescription = null,
-                            modifier = Modifier.size(28.dp),
+                            modifier = Modifier.size(26.dp),
                             tint = MaterialTheme.colorScheme.outline
                         )
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = if (searchQuery.isBlank()) "No products in inventory." else "No products matching '$searchQuery'",
                         style = MaterialTheme.typography.titleMedium,
@@ -168,7 +171,7 @@ fun SearchScreen(
             icon = {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(40.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center
@@ -183,16 +186,16 @@ fun SearchScreen(
             title = { Text("Add to Restock List", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(text = fullTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(text = fullTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(
-                            text = "Selling Price: ₱${"%.2f".format(product.sellingPrice)}",
+                            text = "Selling Price: ₱${product.sellingPrice.roundToInt()}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "Cost: ₱${"%.2f".format(product.cost)}",
+                            text = "Cost: ₱${product.cost.roundToInt()}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.secondary
                         )
@@ -229,7 +232,7 @@ fun SearchScreen(
                     },
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Add to Restock", fontWeight = FontWeight.Bold)
+                    Text("Save", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -247,7 +250,6 @@ fun ProductCard(
     product: ProductEntity,
     onAddClick: () -> Unit
 ) {
-    // Format Name + Unit Size + Unit (e.g. Coca-Cola 1.5L Plastic Bottle)
     val fullTitle = buildString {
         append(product.name)
         if (product.unitSize.isNotBlank()) append(" ${product.unitSize}")
@@ -269,14 +271,14 @@ fun ProductCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left Side: Price + Add to Restock Button directly below it
+            // Left Side: Price + Add to Restock Button
             Column(
                 horizontalAlignment = Alignment.Start,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = "₱${"%.2f".format(product.sellingPrice)}",
-                    style = MaterialTheme.typography.titleLarge,
+                    text = "₱${product.sellingPrice.roundToInt()}",
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
                 )
@@ -284,20 +286,20 @@ fun ProductCard(
                 FilledTonalButton(
                     onClick = onAddClick,
                     shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.height(32.dp)
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.height(30.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Restock",
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text("+ Restock", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                 }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
             // Right Side: Name + Unit Size + Unit
             Column(
@@ -308,7 +310,9 @@ fun ProductCard(
                     text = fullTitle,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
 
                 if (product.storeName.isNotBlank()) {
@@ -324,7 +328,9 @@ fun ProductCard(
                         Text(
                             text = product.storeName,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.secondary
+                            color = MaterialTheme.colorScheme.secondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

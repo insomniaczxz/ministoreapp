@@ -29,7 +29,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.ministoreapp.data.local.entities.ProductEntity
 import com.example.ministoreapp.data.local.entities.RestockItemEntity
 import com.example.ministoreapp.domain.RecommendationEngine
@@ -38,6 +37,7 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,13 +51,11 @@ fun RestockScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
 
-    // Compute totals
     val totalPurchasingCost = restockItems.sumOf { it.cost * it.quantity }
     val totalSellingPrice = restockItems.sumOf { it.sellingPrice * it.quantity }
     val estimatedProfit = (totalSellingPrice - totalPurchasingCost).coerceAtLeast(0.0)
     val marginPercent = if (totalSellingPrice > 0) (estimatedProfit / totalSellingPrice * 100) else 0.0
 
-    // Smart Vendor Recommendation
     val recommendation = remember(restockItems, allProducts) {
         RecommendationEngine.recommendStore(restockItems, allProducts)
     }
@@ -93,14 +91,13 @@ fun RestockScreen(
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
                         Text(
-                            text = "₱${"%.2f".format(totalPurchasingCost)}",
+                            text = "₱${totalPurchasingCost.roundToInt()}",
                             style = MaterialTheme.typography.headlineLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
 
-                    // Profit Margin Badge
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
@@ -117,7 +114,7 @@ fun RestockScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "${"%.1f".format(marginPercent)}%",
+                                text = "${marginPercent.roundToInt()}%",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -134,13 +131,13 @@ fun RestockScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Total Retail Value: ₱${"%.2f".format(totalSellingPrice)}",
+                        text = "Total Retail Value: ₱${totalSellingPrice.roundToInt()}",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f)
                     )
                     Text(
-                        text = "Est. Profit: ₱${"%.2f".format(estimatedProfit)}",
+                        text = "Est. Profit: ₱${estimatedProfit.roundToInt()}",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -151,7 +148,6 @@ fun RestockScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Smart Recommendation Card
         recommendation?.let { rec ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -191,7 +187,7 @@ fun RestockScreen(
                             color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
                         )
                         Text(
-                            text = "Purchase from '${rec.recommendedStoreName}' for lowest total cost of ₱${"%.2f".format(rec.totalCost)}",
+                            text = "Purchase from '${rec.recommendedStoreName}' for lowest total cost of ₱${rec.totalCost.roundToInt()}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onTertiaryContainer
@@ -203,7 +199,6 @@ fun RestockScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Action Buttons Row: Copy List & Export TXT
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -335,7 +330,7 @@ fun RestockItemCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Cost: ₱${"%.2f".format(item.cost)}",
+                        text = "Cost: ₱${item.cost.roundToInt()}",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
@@ -346,7 +341,7 @@ fun RestockItemCard(
                         color = MaterialTheme.colorScheme.outline
                     )
                     Text(
-                        text = "Total: ₱${"%.2f".format(item.cost * item.quantity)}",
+                        text = "Total: ₱${(item.cost * item.quantity).roundToInt()}",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -372,7 +367,6 @@ fun RestockItemCard(
                 }
             }
 
-            // Quantity Counter Stepper
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -438,10 +432,10 @@ fun generateRestockListText(items: List<RestockItemEntity>, totalCost: Double): 
     sb.appendLine("Date: ${dateFormat.format(Date())}")
     sb.appendLine("---------------------------")
     for (item in items) {
-        sb.appendLine("${item.productName} - Qty: ${item.quantity} x ₱${"%.2f".format(item.cost)} = ₱${"%.2f".format(item.cost * item.quantity)}")
+        sb.appendLine("${item.productName} - Qty: ${item.quantity} x ₱${item.cost.roundToInt()} = ₱${(item.cost * item.quantity).roundToInt()}")
     }
     sb.appendLine("---------------------------")
-    sb.appendLine("TOTAL RESTOCK COST: ₱${"%.2f".format(totalCost)}")
+    sb.appendLine("TOTAL RESTOCK COST: ₱${totalCost.roundToInt()}")
     return sb.toString()
 }
 

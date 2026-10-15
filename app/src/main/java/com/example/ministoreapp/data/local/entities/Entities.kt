@@ -4,10 +4,46 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import java.util.UUID
 
+@Entity(tableName = "product_groups")
+data class ProductGroupEntity(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val baseName: String,
+    val aliases: String = "",
+    val namingMode: String = "append", // "append" or "replace"
+    val variants: String = "",
+    val brand: String = "",
+    val category: String = "",
+    val storeName: String = "",
+    val unitSize: String = "",
+    val containerType: String = "",
+    val hasWholesale: Boolean = false,
+    val wholesaleUnit: String = "",
+    val wholesaleCost: Double = 0.0,
+    val itemsPerPack: Int = 1,
+    val wholesaleMarkupType: String = "FIXED",
+    val wholesaleMarkupValue: Double = 0.0,
+    val wholesaleSellingPrice: Double = 0.0,
+    val showWholesaleInSearch: Boolean = true,
+    val hasRetail: Boolean = true,
+    val retailCost: Double = 0.0,
+    val retailMarkupType: String = "FIXED",
+    val retailMarkupValue: Double = 0.0,
+    val retailSellingPrice: Double = 0.0,
+    val isBeverage: Boolean = false,
+    val coldRetailMarkup: Double = 0.0,
+    val coldCaseMarkup: Double = 0.0,
+    val excludedKeys: String = "", // Comma-separated list of comboKey strings excluded/deleted
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "products")
 data class ProductEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val groupId: String? = null, // Shared GUID/UUID pointing to ProductGroupEntity
+    val comboKey: String = "", // Unique combination key (e.g. "Coca-Cola_wholesale_reg")
     val name: String,
+    val aliases: String = "", // Comma-separated alias search keywords (e.g. "Coke, Softdrink")
     val category: String = "",
     val brand: String = "",
     val unit: String = "",
@@ -23,7 +59,7 @@ data class ProductEntity(
     val parentProductId: String? = null,
     val isWholesaleParent: Boolean = false,
     val itemsPerWholesalePack: Int? = null,
-    val variantType: String? = null, // e.g. "NORMAL", "COLD", or custom variant name
+    val variantType: String? = null, // e.g. "WHOLESALE", "RETAIL", "COLD_RETAIL", "COLD_WHOLESALE", or variant tag
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
@@ -70,7 +106,7 @@ data class CreditTransactionEntity(
     val cashierId: String,
     val cashierName: String,
     val notes: String = "",
-    val itemsJson: String = "[]", // JSON array of items added or manual product entry
+    val itemsJson: String = "[]",
     val updatedAt: Long = System.currentTimeMillis()
 )
 
@@ -96,7 +132,7 @@ data class EventEntity(
     val quantity: Int = 1,
     val total: Double = 0.0,
     val details: String = "",
-    val transferType: String? = null, // "GCash to Store Cash" or "Store Cash to GCash"
+    val transferType: String? = null,
     val isSettled: Boolean = false,
     val settlementTimestamp: Long? = null,
     val settlementCashierId: String? = null,
@@ -122,7 +158,6 @@ data class RestockItemEntity(
     val updatedAt: Long = System.currentTimeMillis()
 )
 
-// Backwards compatibility alias
 typealias OrderItemEntity = RestockItemEntity
 
 @Entity(tableName = "price_history")
@@ -142,7 +177,7 @@ data class PriceHistoryEntity(
 data class AuditLogEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val timestamp: Long = System.currentTimeMillis(),
-    val actionType: String, // "PRODUCT_ADD", "PRODUCT_EDIT", "PRODUCT_DELETE", "CUSTOMER_ADD", "CUSTOMER_DELETE", "CREDIT_ADD", "CREDIT_PAYMENT", "EVENT_ADD", "EVENT_DELETE", "EVENT_SETTLE", "CASHIER_ADD", "CASHIER_EDIT", "CASHIER_DELETE", "PRICE_EDIT", "SETTINGS_EDIT"
+    val actionType: String,
     val description: String,
     val cashierId: String,
     val cashierName: String,
@@ -175,6 +210,22 @@ data class BrandEntity(
 
 @Entity(tableName = "units")
 data class UnitEntity(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "containers")
+data class ContainerEntity(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "wholesale_units")
+data class WholesaleUnitEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val name: String,
     val createdAt: Long = System.currentTimeMillis(),

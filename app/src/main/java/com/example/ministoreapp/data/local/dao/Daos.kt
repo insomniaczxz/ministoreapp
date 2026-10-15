@@ -11,16 +11,40 @@ import com.example.ministoreapp.data.local.entities.BanRecordEntity
 import com.example.ministoreapp.data.local.entities.BrandEntity
 import com.example.ministoreapp.data.local.entities.CashierEntity
 import com.example.ministoreapp.data.local.entities.CategoryEntity
+import com.example.ministoreapp.data.local.entities.ContainerEntity
 import com.example.ministoreapp.data.local.entities.CreditTransactionEntity
 import com.example.ministoreapp.data.local.entities.CustomerEntity
 import com.example.ministoreapp.data.local.entities.EventEntity
 import com.example.ministoreapp.data.local.entities.RestockItemEntity
 import com.example.ministoreapp.data.local.entities.PriceHistoryEntity
 import com.example.ministoreapp.data.local.entities.ProductEntity
+import com.example.ministoreapp.data.local.entities.ProductGroupEntity
 import com.example.ministoreapp.data.local.entities.SecuritySettingsEntity
 import com.example.ministoreapp.data.local.entities.StoreEntity
 import com.example.ministoreapp.data.local.entities.UnitEntity
+import com.example.ministoreapp.data.local.entities.WholesaleUnitEntity
 import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface ProductGroupDao {
+    @Query("SELECT * FROM product_groups ORDER BY baseName ASC")
+    fun getAllGroupsFlow(): Flow<List<ProductGroupEntity>>
+
+    @Query("SELECT * FROM product_groups WHERE id = :id")
+    suspend fun getGroupById(id: String): ProductGroupEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGroup(group: ProductGroupEntity)
+
+    @Update
+    suspend fun updateGroup(group: ProductGroupEntity)
+
+    @Delete
+    suspend fun deleteGroup(group: ProductGroupEntity)
+
+    @Query("DELETE FROM product_groups WHERE id = :id")
+    suspend fun deleteGroupById(id: String)
+}
 
 @Dao
 interface ProductDao {
@@ -30,11 +54,10 @@ interface ProductDao {
     @Query("SELECT * FROM products")
     suspend fun getAllProducts(): List<ProductEntity>
 
-    // Variant Display Rule: If a product has variants (hasVariants == 1), hide parent product from search display and show ONLY child variants.
     @Query("""
         SELECT * FROM products 
         WHERE (hasVariants = 0 OR hasVariants IS NULL) 
-        AND (:query = '' OR name LIKE '%' || :query || '%' OR category LIKE '%' || :query || '%' OR brand LIKE '%' || :query || '%' OR (:query = 'Wholesale' AND (isWholesaleParent = 1 OR parentProductId IN (SELECT id FROM products WHERE isWholesaleParent = 1))))
+        AND (:query = '' OR name LIKE '%' || :query || '%' OR aliases LIKE '%' || :query || '%' OR category LIKE '%' || :query || '%' OR brand LIKE '%' || :query || '%' OR (:query = 'Wholesale' AND (isWholesaleParent = 1 OR parentProductId IN (SELECT id FROM products WHERE isWholesaleParent = 1))))
         ORDER BY name ASC
     """)
     fun getSearchProductsFlow(query: String): Flow<List<ProductEntity>>
@@ -44,6 +67,12 @@ interface ProductDao {
 
     @Query("SELECT * FROM products WHERE id = :id")
     suspend fun getProductById(id: String): ProductEntity?
+
+    @Query("SELECT * FROM products WHERE groupId = :groupId")
+    suspend fun getProductsByGroupId(groupId: String): List<ProductEntity>
+
+    @Query("SELECT COUNT(*) FROM products WHERE groupId = :groupId")
+    suspend fun getSearchItemCountForGroup(groupId: String): Int
 
     @Query("SELECT * FROM products WHERE parentProductId = :parentId ORDER BY name ASC")
     suspend fun getChildVariants(parentId: String): List<ProductEntity>
@@ -59,6 +88,12 @@ interface ProductDao {
 
     @Delete
     suspend fun deleteProduct(product: ProductEntity)
+
+    @Query("DELETE FROM products WHERE id = :id")
+    suspend fun deleteProductById(id: String)
+
+    @Query("DELETE FROM products WHERE groupId = :groupId")
+    suspend fun deleteProductsByGroupId(groupId: String)
 
     @Query("DELETE FROM products WHERE id = :id OR parentProductId = :id")
     suspend fun deleteProductAndVariants(id: String)
@@ -110,7 +145,6 @@ interface CustomerDao {
 
     @Query("SELECT * FROM customers WHERE id = :id")
     suspend fun getCustomerById(id: String): CustomerEntity?
-
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCustomer(customer: CustomerEntity)
@@ -193,7 +227,6 @@ interface RestockItemDao {
     @Query("DELETE FROM order_items")
     suspend fun clearRestockItems()
 
-    // Aliases for backwards compatibility
     @Query("SELECT * FROM order_items ORDER BY createdAt ASC")
     fun getOrdersFlow(): Flow<List<RestockItemEntity>> = getRestockItemsFlow()
 
@@ -270,4 +303,22 @@ interface MasterDataDao {
     suspend fun insertUnit(unit: UnitEntity)
     @Delete
     suspend fun deleteUnit(unit: UnitEntity)
+
+    @Query("SELECT * FROM containers ORDER BY name ASC")
+    fun getContainersFlow(): Flow<List<ContainerEntity>>
+    @Query("SELECT * FROM containers ORDER BY name ASC")
+    suspend fun getContainers(): List<ContainerEntity>
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertContainer(container: ContainerEntity)
+    @Delete
+    suspend fun deleteContainer(container: ContainerEntity)
+
+    @Query("SELECT * FROM wholesale_units ORDER BY name ASC")
+    fun getWholesaleUnitsFlow(): Flow<List<WholesaleUnitEntity>>
+    @Query("SELECT * FROM wholesale_units ORDER BY name ASC")
+    suspend fun getWholesaleUnits(): List<WholesaleUnitEntity>
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertWholesaleUnit(wholesaleUnit: WholesaleUnitEntity)
+    @Delete
+    suspend fun deleteWholesaleUnit(wholesaleUnit: WholesaleUnitEntity)
 }

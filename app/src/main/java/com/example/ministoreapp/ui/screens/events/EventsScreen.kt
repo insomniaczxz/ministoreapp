@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.ministoreapp.data.local.entities.CashierEntity
 import com.example.ministoreapp.data.local.entities.EventEntity
@@ -28,6 +29,7 @@ import com.example.ministoreapp.ui.components.CashierVerificationDialog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,7 +47,6 @@ fun EventsScreen(
     var settlementNoteInput by remember { mutableStateOf("") }
     var filterPendingOnly by remember { mutableStateOf(false) }
 
-    // Stats Calculations
     val todayStart = remember {
         val cal = java.util.Calendar.getInstance()
         cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
@@ -70,90 +71,93 @@ fun EventsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFF5F7F6))
-            .padding(16.dp)
+            .padding(12.dp)
     ) {
         // Top 3 Stat Cards Row
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Card 1: Events today
             Card(
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 border = BorderStroke(1.dp, Color(0xFFE2E6E4))
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(10.dp)) {
                     Text(
                         text = "$eventsTodayCount",
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1B1D1C)
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "Events today",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF6B726E)
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF6B726E),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            // Card 2: Amount today
             Card(
-                modifier = Modifier.weight(1.3f),
-                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.weight(1.2f),
+                shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 border = BorderStroke(1.dp, Color(0xFFE2E6E4))
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(10.dp)) {
                     Text(
-                        text = "₱${"%.2f".format(amountTodayTotal)}",
-                        style = MaterialTheme.typography.titleLarge,
+                        text = "₱${amountTodayTotal.roundToInt()}",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1B1D1C),
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "Amount today",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF6B726E)
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF6B726E),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            // Card 3: Pending settle
             Card(
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 border = BorderStroke(1.dp, Color(0xFFE2E6E4))
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(10.dp)) {
                     Text(
                         text = "$pendingSettleCount",
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1B1D1C)
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "Pending settle",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF6B726E)
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF6B726E),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // 2x2 Action Grid
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Button 1: Buy (purchase)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Card(
                     modifier = Modifier
                         .weight(1f)
@@ -161,17 +165,17 @@ fun EventsScreen(
                             defaultCreateType = "BUY"
                             showCreateModal = true
                         },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     border = BorderStroke(1.dp, Color(0xFFE2E6E4))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(34.dp)
                                 .clip(CircleShape)
                                 .background(Color(0xFFF5ECE0)),
                             contentAlignment = Alignment.Center
@@ -180,20 +184,21 @@ fun EventsScreen(
                                 imageVector = Icons.Default.ShoppingCart,
                                 contentDescription = null,
                                 tint = Color(0xFF8C581E),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Buy (purchase)",
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B1D1C)
+                            color = Color(0xFF1B1D1C),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
-                // Button 2: Fund in / out
                 Card(
                     modifier = Modifier
                         .weight(1f)
@@ -201,17 +206,17 @@ fun EventsScreen(
                             defaultCreateType = "FUND_TRANSFER"
                             showCreateModal = true
                         },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     border = BorderStroke(1.dp, Color(0xFFE2E6E4))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(34.dp)
                                 .clip(CircleShape)
                                 .background(Color(0xFFE3EFE9)),
                             contentAlignment = Alignment.Center
@@ -220,39 +225,40 @@ fun EventsScreen(
                                 imageVector = Icons.Default.Paid,
                                 contentDescription = null,
                                 tint = Color(0xFF0B5E38),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Fund in / out",
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B1D1C)
+                            color = Color(0xFF1B1D1C),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Button 3: Settle a transfer
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Card(
                     modifier = Modifier
                         .weight(1f)
                         .clickable { filterPendingOnly = !filterPendingOnly },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = if (filterPendingOnly) Color(0xFFE3EFE9) else Color.White
                     ),
                     border = BorderStroke(1.dp, if (filterPendingOnly) Color(0xFF0B5E38) else Color(0xFFE2E6E4))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(34.dp)
                                 .clip(CircleShape)
                                 .background(Color(0xFFE6F0EC)),
                             contentAlignment = Alignment.Center
@@ -261,20 +267,21 @@ fun EventsScreen(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = null,
                                 tint = Color(0xFF0B5E38),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Settle a transfer",
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B1D1C)
+                            color = Color(0xFF1B1D1C),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
-                // Button 4: Store info note
                 Card(
                     modifier = Modifier
                         .weight(1f)
@@ -282,17 +289,17 @@ fun EventsScreen(
                             defaultCreateType = "TASK"
                             showCreateModal = true
                         },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     border = BorderStroke(1.dp, Color(0xFFE2E6E4))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(34.dp)
                                 .clip(CircleShape)
                                 .background(Color(0xFFE8F2EC)),
                             contentAlignment = Alignment.Center
@@ -301,22 +308,24 @@ fun EventsScreen(
                                 imageVector = Icons.Default.Description,
                                 contentDescription = null,
                                 tint = Color(0xFF0B5E38),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Store info note",
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B1D1C)
+                            color = Color(0xFF1B1D1C),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Events List Feed
         if (displayedEvents.isEmpty()) {
@@ -326,13 +335,13 @@ fun EventsScreen(
             ) {
                 Text(
                     text = if (filterPendingOnly) "No pending settlements." else "No events logged.",
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = Color(0xFF6B726E)
                 )
             }
         } else {
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(displayedEvents, key = { it.id }) { event ->
@@ -358,7 +367,6 @@ fun EventsScreen(
         )
     }
 
-    // Settlement Modal
     eventToSettle?.let { event ->
         var pendingSettlingCashier by remember { mutableStateOf<CashierEntity?>(null) }
         val isTask = event.type == "TASK"
@@ -378,7 +386,7 @@ fun EventsScreen(
                             text = if (isTask) {
                                 "Mark task '${event.description}' as completed?"
                             } else {
-                                "Settle transfer of ₱${"%.2f".format(event.total)} (${event.transferType})"
+                                "Settle transfer of ₱${event.total.roundToInt()} (${event.transferType})"
                             },
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -396,7 +404,7 @@ fun EventsScreen(
                         onClick = { pendingSettlingCashier = cashiers.firstOrNull() },
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Proceed to Verification", fontWeight = FontWeight.Bold)
+                        Text("Save", fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
@@ -424,7 +432,6 @@ fun EventsScreen(
         }
     }
 
-    // Delete Modal
     eventToDelete?.let { event ->
         CashierVerificationDialog(
             cashiers = cashiers,
@@ -462,12 +469,11 @@ fun EventCardItem(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         border = BorderStroke(1.dp, Color(0xFFE2E6E4))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Header Row: Icon + Type Title + Amount
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -475,11 +481,12 @@ fun EventCardItem(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(32.dp)
                             .clip(CircleShape)
                             .background(bgCircleColor),
                         contentAlignment = Alignment.Center
@@ -488,32 +495,32 @@ fun EventCardItem(
                             imageVector = iconVector,
                             contentDescription = null,
                             tint = iconColor,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
 
                     Text(
                         text = displayTypeTitle,
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF526058)
+                        color = Color(0xFF526058),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
                 if (event.total > 0) {
                     Text(
-                        text = "₱${"%.2f".format(event.total)}",
-                        style = MaterialTheme.typography.titleLarge,
+                        text = "₱${event.total.roundToInt()}",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1B1D1C)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Main Description Title
             if (event.description.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = event.description,
                     style = MaterialTheme.typography.titleMedium,
@@ -522,19 +529,17 @@ fun EventCardItem(
                 )
             }
 
-            // Subtitle Details
             if (event.details.isNotBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = event.details,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFF6B726E)
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Footer Row: Date · Cashier Name, Delete Icon
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -542,7 +547,7 @@ fun EventCardItem(
             ) {
                 Text(
                     text = "${dateFormat.format(Date(event.timestamp))} · ${event.cashierName}",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF8A938E)
                 )
 
@@ -554,24 +559,23 @@ fun EventCardItem(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Delete",
                         tint = Color(0xFF8A938E),
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
 
-            // Settlement / Completion Box
             if (event.type == "FUND_TRANSFER" || event.type == "TASK") {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(enabled = !event.isSettled, onClick = onSettleClick),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFCFB)),
                     border = BorderStroke(1.dp, Color(0xFFE2E6E4))
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(
@@ -579,7 +583,7 @@ fun EventCardItem(
                             onCheckedChange = { if (!event.isSettled) onSettleClick() },
                             enabled = !event.isSettled
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Column {
                             Text(
                                 text = if (event.isSettled) {
@@ -587,7 +591,7 @@ fun EventCardItem(
                                 } else {
                                     if (event.type == "TASK") "Mark as Completed" else "Mark as Settled"
                                 },
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF1B1D1C)
                             )
@@ -595,9 +599,9 @@ fun EventCardItem(
                                 text = if (event.isSettled) {
                                     "By ${event.settlementCashierName ?: "Cashier"}${if (event.settlementNote.isNullOrBlank()) "" else " (${event.settlementNote})"}"
                                 } else {
-                                    "Asks for cashier + 4-digit PIN"
+                                    "Requires cashier verification"
                                 },
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFF6B726E)
                             )
                         }
@@ -758,7 +762,7 @@ fun CreateEventDialog(
                     enabled = description.isNotBlank() || selectedType == "FUND_TRANSFER",
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Verify Cashier & Save", fontWeight = FontWeight.Bold)
+                    Text("Save", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

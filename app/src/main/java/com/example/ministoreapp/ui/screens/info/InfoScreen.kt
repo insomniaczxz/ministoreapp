@@ -30,6 +30,7 @@ import com.example.ministoreapp.data.local.entities.StoreEntity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun InfoScreen(
@@ -214,7 +215,7 @@ fun PriceHistoryTileContent(priceHistory: List<PriceHistoryEntity>) {
                         Text(text = ph.productName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Old Price: ₱${"%.2f".format(ph.oldPrice)}  ➔  New Price: ₱${"%.2f".format(ph.newPrice)}",
+                            text = "Old Price: ₱${ph.oldPrice.roundToInt()}  ➔  New Price: ₱${ph.newPrice.roundToInt()}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color(0xFF0B5E38),
                             fontWeight = FontWeight.Bold
@@ -299,7 +300,7 @@ fun VendorInfoTileContent(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(text = "• ${prod.name}", style = MaterialTheme.typography.bodyMedium)
-                                    Text(text = "Cost: ₱${"%.2f".format(prod.cost)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text(text = "Cost: ₱${prod.cost.roundToInt()}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                 }
                             }
                             if (vendorProducts.size > 4) {
@@ -376,7 +377,7 @@ fun WholesaleCatalogTileContent(wholesaleProducts: List<ProductEntity>) {
                         Text(text = product.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Wholesale Pack Price: ₱${"%.2f".format(product.sellingPrice)} | Pack Size: ${product.itemsPerWholesalePack ?: 1} items",
+                            text = "Wholesale Pack Price: ₱${product.sellingPrice.roundToInt()} | Pack Size: ${product.itemsPerWholesalePack ?: 1} items",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -384,7 +385,7 @@ fun WholesaleCatalogTileContent(wholesaleProducts: List<ProductEntity>) {
                             val childCost = product.cost / (product.itemsPerWholesalePack ?: 1)
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Calculated Child Unit Cost: ₱${"%.2f".format(childCost)}",
+                                text = "Calculated Child Unit Cost: ₱${childCost.roundToInt()}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFF0B5E38),
                                 fontWeight = FontWeight.Bold

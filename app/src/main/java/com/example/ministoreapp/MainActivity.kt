@@ -98,6 +98,7 @@ class MainActivity : ComponentActivity() {
 
         // Live States from Database Flows
         val securitySettings by db.securitySettingsDao().getSettingsFlow().collectAsState(initial = null)
+        val productGroups by db.productGroupDao().getAllGroupsFlow().collectAsState(initial = emptyList())
         val products by db.productDao().getAllProductsFlow().collectAsState(initial = emptyList())
         val searchProducts by db.productDao().getSearchProductsFlow("").collectAsState(initial = emptyList())
         val wholesaleProducts by db.productDao().getWholesaleProductsFlow().collectAsState(initial = emptyList())
@@ -113,10 +114,13 @@ class MainActivity : ComponentActivity() {
         val categories by db.masterDataDao().getCategoriesFlow().collectAsState(initial = emptyList())
         val brands by db.masterDataDao().getBrandsFlow().collectAsState(initial = emptyList())
         val units by db.masterDataDao().getUnitsFlow().collectAsState(initial = emptyList())
+        val containers by db.masterDataDao().getContainersFlow().collectAsState(initial = emptyList())
+        val wholesaleUnits by db.masterDataDao().getWholesaleUnitsFlow().collectAsState(initial = emptyList())
 
         // App Launch Guard State
         var isAppUnlocked by remember { mutableStateOf(false) }
         var showSettingsPinPrompt by remember { mutableStateOf(false) }
+        var activeSettingsDetailView by remember { mutableStateOf<String?>(null) }
 
         val settings = securitySettings ?: SecuritySettingsEntity()
 
@@ -139,15 +143,40 @@ class MainActivity : ComponentActivity() {
                 onDismiss = { showSettingsPinPrompt = false },
                 onSuccess = {
                     showSettingsPinPrompt = false
+                    activeSettingsDetailView = null
                     currentTab = TabScreen.Settings
                 }
             )
         }
 
+        val headerTitle = when {
+            currentTab == TabScreen.Settings && activeSettingsDetailView != null ->
+                com.example.ministoreapp.ui.screens.settings.getDetailTitle(activeSettingsDetailView)
+            currentTab == TabScreen.Settings -> "Settings"
+            else -> settings.storeName
+        }
+
+        val showHeaderBackButton = currentTab == TabScreen.Settings
+
+        val onHeaderBackClick: (() -> Unit)? = if (currentTab == TabScreen.Settings) {
+            {
+                if (activeSettingsDetailView != null) {
+                    activeSettingsDetailView = null
+                } else {
+                    currentTab = TabScreen.Search
+                }
+            }
+        } else null
+
+        val showHeaderActions = currentTab != TabScreen.Settings
+
         Scaffold(
             topBar = {
                 GlobalHeader(
-                    storeName = settings.storeName,
+                    title = headerTitle,
+                    showBackButton = showHeaderBackButton,
+                    onBackClick = onHeaderBackClick,
+                    showActions = showHeaderActions,
                     onSyncClick = {
                         lifecycleScope.launch {
                             try {
@@ -167,6 +196,7 @@ class MainActivity : ComponentActivity() {
                         if (settings.pinOnSettingsOpeningEnabled) {
                             showSettingsPinPrompt = true
                         } else {
+                            activeSettingsDetailView = null
                             currentTab = TabScreen.Settings
                         }
                     }
@@ -371,8 +401,11 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                     TabScreen.Settings -> SettingsScreen(
+                        activeDetailView = activeSettingsDetailView,
+                        onActiveDetailViewChange = { activeSettingsDetailView = it },
                         securitySettings = settings,
                         products = products,
+                        productGroups = productGroups,
                         cashiers = cashiers,
                         auditLogs = auditLogs,
                         banRecords = banRecords,
@@ -380,72 +413,103 @@ class MainActivity : ComponentActivity() {
                         categories = categories,
                         brands = brands,
                         units = units,
+                        containers = containers,
+                        wholesaleUnits = wholesaleUnits,
                         isDarkTheme = isDarkTheme,
                         onToggleDarkTheme = onToggleDarkTheme,
-                        onSaveProduct = { parentProduct, cashier, variants ->
+                        onSaveProductGroup = { group, generatedItems, cashier ->
                             lifecycleScope.launch {
-                                val existing = db.productDao().getProductById(parentProduct.id)
-                                if (existing != null && existing.sellingPrice != parentProduct.sellingPrice) {
-                                    db.priceHistoryDao().insertPriceHistory(
-                                        PriceHistoryEntity(
-                                            productId = parentProduct.id,
-                                            productName = parentProduct.name,
-                                            oldPrice = existing.sellingPrice,
-                                            newPrice = parentProduct.sellingPrice,
-                                            cashierId = cashier.id,
-                                            cashierName = cashier.name
-                                        )
-                                    )
+                                db.productGroupDao().insertGroup(group)
+                                db.productDao().deleteProductsByGroupId(group.id)
+                                if (generatedItems.isNotEmpty()) {
+                                    db.productDao().insertProducts(generatedItems)
                                 }
-                                db.productDao().insertProduct(parentProduct)
-                                if (variants.isNotEmpty()) {
-                                    db.productDao().insertProducts(variants)
+                                if (group.brand.isNotBlank()) {
+                                    db.masterDataDao().insertBrand(com.example.ministoreapp.data.local.entities.BrandEntity(name = group.brand))
+                                }
+                                if (group.category.isNotBlank()) {
+                                    db.masterDataDao().insertCategory(com.example.ministoreapp.data.local.entities.CategoryEntity(name = group.category))
+                                }
+                                if (group.containerType.isNotBlank()) {
+                                    db.masterDataDao().insertContainer(com.example.ministoreapp.data.local.entities.ContainerEntity(name = group.containerType))
+                                }
+                                if (group.wholesaleUnit.isNotBlank()) {
+                                    db.masterDataDao().insertWholesaleUnit(com.example.ministoreapp.data.local.entities.WholesaleUnitEntity(name = group.wholesaleUnit))
                                 }
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = if (existing == null) "PRODUCT_ADD" else "PRODUCT_EDIT",
-                                        description = "Saved product '${parentProduct.name}' price ₱${parentProduct.sellingPrice}",
+                                        actionType = "PRODUCT_GROUP_SAVE",
+                                        description = "Saved product group '${group.baseName}' (${generatedItems.size} search items)",
                                         cashierId = cashier.id,
                                         cashierName = cashier.name
                                     )
                                 )
                             }
                         },
-                        onDeleteProduct = { product, cashier ->
+                        onDeleteSingleProduct = { product, cashier ->
                             lifecycleScope.launch {
-                                db.productDao().deleteProductAndVariants(product.id)
+                                db.productDao().deleteProduct(product)
+                                val remainingCount = if (product.groupId != null) db.productDao().getSearchItemCountForGroup(product.groupId) else 0
+
+                                if (remainingCount == 0 && product.groupId != null) {
+                                    db.productGroupDao().deleteGroupById(product.groupId)
+                                } else if (product.groupId != null) {
+                                    val group = db.productGroupDao().getGroupById(product.groupId)
+                                    if (group != null && product.comboKey.isNotBlank()) {
+                                        val existingKeys = group.excludedKeys.split(",").map { it.trim() }.filter { it.isNotBlank() }.toMutableList()
+                                        if (!existingKeys.contains(product.comboKey)) {
+                                            existingKeys.add(product.comboKey)
+                                            db.productGroupDao().updateGroup(group.copy(excludedKeys = existingKeys.joinToString(",")))
+                                        }
+                                    }
+                                }
+
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "PRODUCT_DELETE",
-                                        description = "DELETED product '${product.name}' (ID: ${product.id})",
+                                        actionType = "PRODUCT_DELETE_SINGLE",
+                                        description = "DELETED single product '${product.name}'",
                                         cashierId = cashier.id,
                                         cashierName = cashier.name
                                     )
                                 )
                             }
                         },
-                        onSaveCashier = { cashier ->
+                        onDeleteProductGroup = { groupId, cashier ->
+                            lifecycleScope.launch {
+                                db.productDao().deleteProductsByGroupId(groupId)
+                                db.productGroupDao().deleteGroupById(groupId)
+                                db.auditLogDao().insertAuditLog(
+                                    AuditLogEntity(
+                                        actionType = "PRODUCT_GROUP_DELETE",
+                                        description = "DELETED product group ID: $groupId",
+                                        cashierId = cashier.id,
+                                        cashierName = cashier.name
+                                    )
+                                )
+                            }
+                        },
+                        onSaveCashier = { cashier, performer, reason ->
                             lifecycleScope.launch {
                                 db.cashierDao().insertCashier(cashier)
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "CASHIER_ADD",
-                                        description = "Added/Updated Cashier '${cashier.name}'",
+                                        actionType = "CASHIER_SAVE",
+                                        description = "Saved/Edited Cashier '${cashier.name}'. Performer: $performer, Reason: $reason",
                                         cashierId = cashier.id,
-                                        cashierName = cashier.name
+                                        cashierName = if (performer.isNotBlank()) performer else cashier.name
                                     )
                                 )
                             }
                         },
-                        onDeleteCashier = { cashier ->
+                        onDeleteCashier = { cashier, performer, reason ->
                             lifecycleScope.launch {
                                 db.cashierDao().deleteCashier(cashier)
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
                                         actionType = "CASHIER_DELETE",
-                                        description = "DELETED Cashier '${cashier.name}'",
+                                        description = "DELETED Cashier '${cashier.name}'. Performer: $performer, Reason: $reason",
                                         cashierId = cashier.id,
-                                        cashierName = cashier.name
+                                        cashierName = if (performer.isNotBlank()) performer else cashier.name
                                     )
                                 )
                             }
@@ -483,6 +547,8 @@ class MainActivity : ComponentActivity() {
                                     "Category" -> db.masterDataDao().insertCategory(com.example.ministoreapp.data.local.entities.CategoryEntity(name = name))
                                     "Brand" -> db.masterDataDao().insertBrand(com.example.ministoreapp.data.local.entities.BrandEntity(name = name))
                                     "Unit" -> db.masterDataDao().insertUnit(com.example.ministoreapp.data.local.entities.UnitEntity(name = name))
+                                    "Container" -> db.masterDataDao().insertContainer(com.example.ministoreapp.data.local.entities.ContainerEntity(name = name))
+                                    "WholesaleUnit" -> db.masterDataDao().insertWholesaleUnit(com.example.ministoreapp.data.local.entities.WholesaleUnitEntity(name = name))
                                 }
                             }
                         },
@@ -493,22 +559,14 @@ class MainActivity : ComponentActivity() {
                                     "Category" -> db.masterDataDao().deleteCategory(com.example.ministoreapp.data.local.entities.CategoryEntity(id = id, name = ""))
                                     "Brand" -> db.masterDataDao().deleteBrand(com.example.ministoreapp.data.local.entities.BrandEntity(id = id, name = ""))
                                     "Unit" -> db.masterDataDao().deleteUnit(com.example.ministoreapp.data.local.entities.UnitEntity(id = id, name = ""))
+                                    "Container" -> db.masterDataDao().deleteContainer(com.example.ministoreapp.data.local.entities.ContainerEntity(id = id, name = ""))
+                                    "WholesaleUnit" -> db.masterDataDao().deleteWholesaleUnit(com.example.ministoreapp.data.local.entities.WholesaleUnitEntity(id = id, name = ""))
                                 }
                             }
                         },
                         onUpdateSecuritySettings = { updatedSettings ->
                             lifecycleScope.launch {
                                 db.securitySettingsDao().insertOrUpdate(updatedSettings)
-                            }
-                        },
-                        onUpdateSecurityPin = { oldPin, newPin ->
-                            if (oldPin == settings.securityPin) {
-                                lifecycleScope.launch {
-                                    db.securitySettingsDao().insertOrUpdate(settings.copy(securityPin = newPin))
-                                }
-                                true
-                            } else {
-                                false
                             }
                         }
                     )
