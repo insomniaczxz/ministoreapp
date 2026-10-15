@@ -1,18 +1,38 @@
 package com.example.ministoreapp.ui.screens.settings
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Store
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.ministoreapp.data.local.entities.AuditLogEntity
 import com.example.ministoreapp.data.local.entities.BanRecordEntity
@@ -38,6 +58,8 @@ fun SettingsScreen(
     categories: List<CategoryEntity>,
     brands: List<BrandEntity>,
     units: List<UnitEntity>,
+    isDarkTheme: Boolean = false,
+    onToggleDarkTheme: (Boolean) -> Unit = {},
     onSaveProduct: (ProductEntity, CashierEntity, List<ProductEntity>) -> Unit,
     onDeleteProduct: (ProductEntity, CashierEntity) -> Unit,
     onSaveCashier: (CashierEntity) -> Unit,
@@ -49,60 +71,330 @@ fun SettingsScreen(
     onUpdateSecuritySettings: (SecuritySettingsEntity) -> Unit,
     onUpdateSecurityPin: (oldPin: String, newPin: String) -> Boolean
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Products", "Cashiers", "Master Data", "Security", "Audit Logs")
+    var activeDetailView by remember { mutableStateOf<String?>(null) }
+    val currentSettings = securitySettings ?: SecuritySettingsEntity()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        ScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 0.dp) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = { Text(title, fontWeight = FontWeight.SemiBold) }
-                )
+        if (activeDetailView != null) {
+            // Sub-screen header with Back button
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 2.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { activeDetailView = null }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                    Text(
+                        text = getDetailTitle(activeDetailView),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                when (activeDetailView) {
+                    "PRODUCTS" -> ProductsManagementTab(
+                        products = products,
+                        cashiers = cashiers,
+                        stores = stores,
+                        categories = categories,
+                        brands = brands,
+                        units = units,
+                        onSaveProduct = onSaveProduct,
+                        onDeleteProduct = onDeleteProduct
+                    )
+                    "CASHIERS" -> CashiersManagementTab(
+                        cashiers = cashiers,
+                        onSaveCashier = onSaveCashier,
+                        onDeleteCashier = onDeleteCashier
+                    )
+                    "DROPDOWNS", "VENDOR_STORES" -> MasterDataManagementTab(
+                        stores = stores,
+                        categories = categories,
+                        brands = brands,
+                        units = units,
+                        banRecords = banRecords,
+                        cashiers = cashiers,
+                        onSaveMasterData = onSaveMasterData,
+                        onDeleteMasterData = onDeleteMasterData,
+                        onSaveBanRecord = onSaveBanRecord,
+                        onDeleteBanRecord = onDeleteBanRecord
+                    )
+                    "STORE_PROFILE" -> SecurityManagementTab(
+                        securitySettings = securitySettings,
+                        onUpdateSecuritySettings = onUpdateSecuritySettings,
+                        onUpdateSecurityPin = onUpdateSecurityPin
+                    )
+                    "BAN_LIST" -> BanRecordsSection(banRecords, cashiers, onSaveBanRecord, onDeleteBanRecord)
+                    "AUDIT_LOGS" -> AuditLogsTab(auditLogs = auditLogs)
+                    "WHOLESALE" -> WholesaleManagementPlaceholder(products)
+                    "SYNC" -> SyncBackupPlaceholder(securitySettings)
+                    "ABOUT" -> AboutAppPlaceholder()
+                }
+            }
+        } else {
+            // Main Tiled List View (Matching 2nd image)
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    Text(
+                        text = "Settings",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                item {
+                    SettingsTileRow(
+                        title = "Store profile",
+                        subtitle = currentSettings.storeName,
+                        icon = Icons.Default.Storefront,
+                        onClick = { activeDetailView = "STORE_PROFILE" }
+                    )
+                }
+
+                item {
+                    SettingsTileRow(
+                        title = "Products & pricing",
+                        subtitle = "${products.size} live products · pricing engine",
+                        icon = Icons.Default.Inventory2,
+                        onClick = { activeDetailView = "PRODUCTS" }
+                    )
+                }
+
+                item {
+                    SettingsTileRow(
+                        title = "Cashiers & PIN",
+                        subtitle = "${cashiers.size} active · 6-digit PIN set",
+                        icon = Icons.Default.People,
+                        onClick = { activeDetailView = "CASHIERS" }
+                    )
+                }
+
+                item {
+                    // Dark Theme Toggle Tile
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DarkMode,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
+                                Column {
+                                    Text(
+                                        text = "Dark Theme",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = if (isDarkTheme) "Dark mode active" else "Light mode active",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Switch(
+                                checked = isDarkTheme,
+                                onCheckedChange = onToggleDarkTheme
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    SettingsTileRow(
+                        title = "Vendor stores",
+                        subtitle = "${stores.size} stores used for recommendations",
+                        icon = Icons.Default.Store,
+                        onClick = { activeDetailView = "VENDOR_STORES" }
+                    )
+                }
+
+                item {
+                    SettingsTileRow(
+                        title = "Dropdown options",
+                        subtitle = "${categories.size} categories · ${brands.size} brands",
+                        icon = Icons.AutoMirrored.Filled.ListAlt,
+                        onClick = { activeDetailView = "DROPDOWNS" }
+                    )
+                }
+
+                item {
+                    SettingsTileRow(
+                        title = "Ban list",
+                        subtitle = "${banRecords.size} people flagged",
+                        icon = Icons.Default.Block,
+                        onClick = { activeDetailView = "BAN_LIST" }
+                    )
+                }
+
+                item {
+                    SettingsTileRow(
+                        title = "Sync & backup",
+                        subtitle = "Google Drive delta sync & local backup",
+                        icon = Icons.Default.Sync,
+                        onClick = { activeDetailView = "SYNC" }
+                    )
+                }
+
+                item {
+                    SettingsTileRow(
+                        title = "Audit logs",
+                        subtitle = "${auditLogs.size} recorded actions",
+                        icon = Icons.Default.Shield,
+                        onClick = { activeDetailView = "AUDIT_LOGS" }
+                    )
+                }
+
+                item {
+                    SettingsTileRow(
+                        title = "Wholesale catalog",
+                        subtitle = "Bulk pack pricing & child unit calculation",
+                        icon = Icons.Default.Inventory,
+                        onClick = { activeDetailView = "WHOLESALE" }
+                    )
+                }
+
+                item {
+                    SettingsTileRow(
+                        title = "About this app",
+                        subtitle = "POS version 1.0 · offline-first engine",
+                        icon = Icons.Default.Info,
+                        onClick = { activeDetailView = "ABOUT" }
+                    )
+                }
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(16.dp))
+private fun getDetailTitle(key: String?): String {
+    return when (key) {
+        "PRODUCTS" -> "Products & Pricing"
+        "CASHIERS" -> "Cashiers & PIN"
+        "DROPDOWNS" -> "Dropdown Options & Master Data"
+        "VENDOR_STORES" -> "Vendor Stores"
+        "STORE_PROFILE" -> "Store Profile & Security"
+        "BAN_LIST" -> "Ban List"
+        "AUDIT_LOGS" -> "Audit Logs"
+        "WHOLESALE" -> "Wholesale Catalog"
+        "SYNC" -> "Sync & Backup"
+        "ABOUT" -> "About This App"
+        else -> "Settings"
+    }
+}
 
-        when (selectedTab) {
-            0 -> ProductsManagementTab(
-                products = products,
-                cashiers = cashiers,
-                stores = stores,
-                categories = categories,
-                brands = brands,
-                units = units,
-                onSaveProduct = onSaveProduct,
-                onDeleteProduct = onDeleteProduct
+@Composable
+fun SettingsTileRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.outline
             )
-            1 -> CashiersManagementTab(
-                cashiers = cashiers,
-                onSaveCashier = onSaveCashier,
-                onDeleteCashier = onDeleteCashier
-            )
-            2 -> MasterDataManagementTab(
-                stores = stores,
-                categories = categories,
-                brands = brands,
-                units = units,
-                banRecords = banRecords,
-                cashiers = cashiers,
-                onSaveMasterData = onSaveMasterData,
-                onDeleteMasterData = onDeleteMasterData,
-                onSaveBanRecord = onSaveBanRecord,
-                onDeleteBanRecord = onDeleteBanRecord
-            )
-            3 -> SecurityManagementTab(
-                securitySettings = securitySettings,
-                onUpdateSecuritySettings = onUpdateSecuritySettings,
-                onUpdateSecurityPin = onUpdateSecurityPin
-            )
-            4 -> AuditLogsTab(auditLogs = auditLogs)
         }
     }
 }
@@ -118,20 +410,20 @@ fun ProductsManagementTab(
     onSaveProduct: (ProductEntity, CashierEntity, List<ProductEntity>) -> Unit,
     onDeleteProduct: (ProductEntity, CashierEntity) -> Unit
 ) {
-    var showAddStandardDialog by remember { mutableStateOf(false) }
+    var showAddProductDialog by remember { mutableStateOf(false) }
     var showAddWholesaleDialog by remember { mutableStateOf(false) }
     var productToDelete by remember { mutableStateOf<ProductEntity?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
-                onClick = { showAddStandardDialog = true },
+                onClick = { showAddProductDialog = true },
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Add Standard", fontWeight = FontWeight.Bold)
+                Text("Add Product", fontWeight = FontWeight.Bold)
             }
             Button(
                 onClick = { showAddWholesaleDialog = true },
@@ -151,8 +443,8 @@ fun ProductsManagementTab(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Row(
                         modifier = Modifier.padding(14.dp),
@@ -160,19 +452,19 @@ fun ProductsManagementTab(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = product.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "${product.name}${if (product.unitSize.isNotBlank()) " ${product.unitSize}" else ""}${if (product.unit.isNotBlank()) " ${product.unit}" else ""}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
                             Text(
                                 text = "Cost: ₱${"%.2f".format(product.cost)} | Selling: ₱${"%.2f".format(product.sellingPrice)} (${product.markupType})",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            if (product.isWholesaleParent) {
-                                Text(
-                                    text = "Wholesale Pack: ${product.itemsPerWholesalePack ?: 1} items",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
+                            if (product.hasVariants) {
+                                Text(text = "• Parent Product (Variants Active)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
                             }
                         }
                         IconButton(onClick = { productToDelete = product }) {
@@ -184,17 +476,17 @@ fun ProductsManagementTab(
         }
     }
 
-    if (showAddStandardDialog) {
-        AddStandardProductDialog(
+    if (showAddProductDialog) {
+        AddProductDialog(
             cashiers = cashiers,
             stores = stores,
             categories = categories,
             brands = brands,
             units = units,
-            onDismiss = { showAddStandardDialog = false },
+            onDismiss = { showAddProductDialog = false },
             onSave = { prod, cashier, variants ->
                 onSaveProduct(prod, cashier, variants)
-                showAddStandardDialog = false
+                showAddProductDialog = false
             }
         )
     }
@@ -228,7 +520,7 @@ fun ProductsManagementTab(
 }
 
 @Composable
-fun AddStandardProductDialog(
+fun AddProductDialog(
     cashiers: List<CashierEntity>,
     stores: List<StoreEntity>,
     categories: List<CategoryEntity>,
@@ -244,64 +536,167 @@ fun AddStandardProductDialog(
     var unitSize by remember { mutableStateOf("") }
     var storeName by remember { mutableStateOf("") }
     var costInput by remember { mutableStateOf("") }
-    var markupType by remember { mutableStateOf("FIXED") }
-    var markupValueInput by remember { mutableStateOf("") }
+
+    // Markup choice: FIXED, PERCENTAGE, MANUAL
+    var markupChoice by remember { mutableStateOf("FIXED") } // "FIXED", "PERCENTAGE", "MANUAL"
+    var percentageInput by remember { mutableStateOf("") }
     var manualPriceInput by remember { mutableStateOf("") }
-    var isBeverage by remember { mutableStateOf(false) }
+
+    // Variant Checkbox
+    var hasVariantsChecked by remember { mutableStateOf(false) }
+    var customVariantName by remember { mutableStateOf("") }
+    var customVariantPriceInput by remember { mutableStateOf("") }
+
+    // Beverage Checkbox (disabled/hidden if hasVariants is checked)
+    var isBeverageChecked by remember { mutableStateOf(false) }
     var normalPriceInput by remember { mutableStateOf("") }
     var coldPriceInput by remember { mutableStateOf("") }
 
     var verifiedCashier by remember { mutableStateOf<CashierEntity?>(null) }
 
     val cost = costInput.toDoubleOrNull() ?: 0.0
-    val markupValue = markupValueInput.toDoubleOrNull() ?: 0.0
-    val manualSellingPrice = manualPriceInput.toDoubleOrNull()
-    val calculatedSellingPrice = PricingEngine.calculateSellingPrice(cost, markupType, markupValue, manualSellingPrice)
+    val percentageVal = percentageInput.toDoubleOrNull() ?: 0.0
+    val manualVal = manualPriceInput.toDoubleOrNull()
+
+    // Calculated price from formula or override
+    val calculatedPrice = remember(cost, markupChoice, percentageVal, manualVal) {
+        if (manualVal != null && manualVal > 0.0) {
+            manualVal
+        } else {
+            PricingEngine.calculateSellingPrice(cost, markupChoice, percentageVal, manualVal)
+        }
+    }
 
     if (verifiedCashier == null) {
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Add Standard Product", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+            title = { Text("Add Product", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
             text = {
-                Column(
+                LazyColumn(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Product Name") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = brand, onValueChange = { brand = it }, label = { Text("Brand") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f))
-                        OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f))
+                    item {
+                        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Product Name") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = unit, onValueChange = { unit = it }, label = { Text("Unit (pcs)") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f))
-                        OutlinedTextField(value = unitSize, onValueChange = { unitSize = it }, label = { Text("Size (500ml)") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f))
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(value = brand, onValueChange = { brand = it }, label = { Text("Brand") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f))
+                            OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f))
+                        }
                     }
-                    OutlinedTextField(value = storeName, onValueChange = { storeName = it }, label = { Text("Vendor Store") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = costInput, onValueChange = { costInput = it }, label = { Text("Item Cost (₱)") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
-
-                    Text("Markup Formula:", fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = markupType == "FIXED", onClick = { markupType = "FIXED" }, label = { Text("Fixed Ladder") }, shape = RoundedCornerShape(10.dp))
-                        FilterChip(selected = markupType == "PERCENTAGE", onClick = { markupType = "PERCENTAGE" }, label = { Text("% Markup") }, shape = RoundedCornerShape(10.dp))
-                        FilterChip(selected = markupType == "MANUAL", onClick = { markupType = "MANUAL" }, label = { Text("Manual") }, shape = RoundedCornerShape(10.dp))
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(value = unitSize, onValueChange = { unitSize = it }, label = { Text("Unit Size (1.5L)") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f))
+                            OutlinedTextField(value = unit, onValueChange = { unit = it }, label = { Text("Unit (Bottle)") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f))
+                        }
                     }
-
-                    if (markupType == "PERCENTAGE") {
-                        OutlinedTextField(value = markupValueInput, onValueChange = { markupValueInput = it }, label = { Text("Markup %") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
-                    } else if (markupType == "MANUAL") {
-                        OutlinedTextField(value = manualPriceInput, onValueChange = { manualPriceInput = it }, label = { Text("Manual Price (₱)") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
+                    item {
+                        OutlinedTextField(value = storeName, onValueChange = { storeName = it }, label = { Text("Vendor Store") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
                     }
-
-                    Text("Calculated Selling Price: ₱${"%.2f".format(calculatedSellingPrice)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = isBeverage, onCheckedChange = { isBeverage = it })
-                        Text("Beverage (Enable Normal/Cold options)")
+                    item {
+                        OutlinedTextField(
+                            value = costInput,
+                            onValueChange = { costInput = it },
+                            label = { Text("Item Cost (₱)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
 
-                    if (isBeverage) {
-                        OutlinedTextField(value = normalPriceInput, onValueChange = { normalPriceInput = it }, label = { Text("Normal Price (₱) - Optional") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(value = coldPriceInput, onValueChange = { coldPriceInput = it }, label = { Text("Cold Price (₱) - Optional") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
+                    item {
+                        Text("Markup Choice:", fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = markupChoice == "FIXED",
+                                onClick = { markupChoice = "FIXED" },
+                                label = { Text("Fixed Ladder") },
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            FilterChip(
+                                selected = markupChoice == "PERCENTAGE",
+                                onClick = { markupChoice = "PERCENTAGE" },
+                                label = { Text("Percentage") },
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+                    }
+
+                    if (markupChoice == "PERCENTAGE") {
+                        item {
+                            OutlinedTextField(
+                                value = percentageInput,
+                                onValueChange = { percentageInput = it },
+                                label = { Text("Markup %") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    item {
+                        OutlinedTextField(
+                            value = manualPriceInput,
+                            onValueChange = { manualPriceInput = it },
+                            label = { Text("Manual Selling Price (₱) - Override") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    item {
+                        Text("Final Price: ₱${"%.2f".format(calculatedPrice)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+
+                    // Variant Checkbox
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = hasVariantsChecked,
+                                onCheckedChange = {
+                                    hasVariantsChecked = it
+                                    if (it) isBeverageChecked = false // Beverage disabled on parent if variants active
+                                }
+                            )
+                            Text("Has Variants / Colors / Flavors", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    if (hasVariantsChecked) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Add Child Variant:", fontWeight = FontWeight.Bold)
+                                    OutlinedTextField(value = customVariantName, onValueChange = { customVariantName = it }, label = { Text("Variant Name / Color") }, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth())
+                                    OutlinedTextField(value = customVariantPriceInput, onValueChange = { customVariantPriceInput = it }, label = { Text("Variant Price Override (₱) - Optional") }, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth())
+                                }
+                            }
+                        }
+                    }
+
+                    // Beverage Checkbox (Available if Variant is unchecked)
+                    if (!hasVariantsChecked) {
+                        item {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = isBeverageChecked, onCheckedChange = { isBeverageChecked = it })
+                                Text("Beverage (Enable Normal/Cold options)")
+                            }
+                        }
+
+                        if (isBeverageChecked) {
+                            item {
+                                OutlinedTextField(value = normalPriceInput, onValueChange = { normalPriceInput = it }, label = { Text("Normal Price (₱) - Optional") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
+                            }
+                            item {
+                                OutlinedTextField(value = coldPriceInput, onValueChange = { coldPriceInput = it }, label = { Text("Cold Price (₱) - Optional") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
+                            }
+                        }
                     }
                 }
             },
@@ -321,7 +716,6 @@ fun AddStandardProductDialog(
             actionTitle = "Verify Cashier to Save Product",
             onDismiss = onDismiss,
             onVerified = { cashier ->
-                val hasBeverageVariants = isBeverage && (normalPriceInput.toDoubleOrNull() ?: 0.0 > 0 || coldPriceInput.toDoubleOrNull() ?: 0.0 > 0)
                 val parentProduct = ProductEntity(
                     name = name,
                     category = category,
@@ -330,23 +724,44 @@ fun AddStandardProductDialog(
                     unitSize = unitSize,
                     storeName = storeName,
                     cost = cost,
-                    markupType = markupType,
-                    markupValue = markupValue,
-                    manualSellingPrice = manualSellingPrice,
-                    sellingPrice = calculatedSellingPrice,
-                    isBeverage = isBeverage,
-                    hasVariants = hasBeverageVariants
+                    markupType = markupChoice,
+                    markupValue = percentageVal,
+                    manualSellingPrice = manualVal,
+                    sellingPrice = calculatedPrice,
+                    isBeverage = isBeverageChecked,
+                    hasVariants = hasVariantsChecked
                 )
 
-                val variants = if (hasBeverageVariants) {
-                    PricingEngine.generateBeverageVariants(
+                val variantsList = mutableListOf<ProductEntity>()
+
+                if (hasVariantsChecked && customVariantName.isNotBlank()) {
+                    val variantPrice = customVariantPriceInput.toDoubleOrNull() ?: calculatedPrice
+                    variantsList.add(
+                        ProductEntity(
+                            name = "$name $customVariantName",
+                            category = category,
+                            brand = brand,
+                            unit = unit,
+                            unitSize = unitSize,
+                            storeName = storeName,
+                            cost = cost,
+                            markupType = "MANUAL",
+                            manualSellingPrice = variantPrice,
+                            sellingPrice = variantPrice,
+                            parentProductId = parentProduct.id,
+                            variantType = "CUSTOM_VARIANT"
+                        )
+                    )
+                } else if (isBeverageChecked) {
+                    val beverageVariants = PricingEngine.generateBeverageVariants(
                         parentProduct = parentProduct,
                         normalPrice = normalPriceInput.toDoubleOrNull(),
                         coldPrice = coldPriceInput.toDoubleOrNull()
                     )
-                } else emptyList()
+                    variantsList.addAll(beverageVariants)
+                }
 
-                onSave(parentProduct, cashier, variants)
+                onSave(parentProduct, cashier, variantsList)
             }
         )
     }
@@ -460,8 +875,8 @@ fun CashiersManagementTab(
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Add New Cashier", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -493,7 +908,7 @@ fun CashiersManagementTab(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column {
@@ -524,7 +939,7 @@ fun MasterDataManagementTab(
     onDeleteBanRecord: (BanRecordEntity, CashierEntity) -> Unit
 ) {
     var selectedDataTab by remember { mutableIntStateOf(0) }
-    val dataTabs = listOf("Ban Records", "Stores", "Categories", "Brands", "Units")
+    val dataTabs = listOf("Stores", "Categories", "Brands", "Units")
 
     Column(modifier = Modifier.fillMaxSize()) {
         ScrollableTabRow(selectedTabIndex = selectedDataTab, edgePadding = 0.dp) {
@@ -536,11 +951,10 @@ fun MasterDataManagementTab(
         Spacer(modifier = Modifier.height(16.dp))
 
         when (selectedDataTab) {
-            0 -> BanRecordsSection(banRecords, cashiers, onSaveBanRecord, onDeleteBanRecord)
-            1 -> SimpleMasterDataSection("Store", stores.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
-            2 -> SimpleMasterDataSection("Category", categories.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
-            3 -> SimpleMasterDataSection("Brand", brands.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
-            4 -> SimpleMasterDataSection("Unit", units.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
+            0 -> SimpleMasterDataSection("Store", stores.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
+            1 -> SimpleMasterDataSection("Category", categories.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
+            2 -> SimpleMasterDataSection("Brand", brands.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
+            3 -> SimpleMasterDataSection("Unit", units.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
         }
     }
 }
@@ -561,8 +975,8 @@ fun BanRecordsSection(
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Add Ban Record", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -587,7 +1001,7 @@ fun BanRecordsSection(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column {
@@ -648,7 +1062,7 @@ fun SimpleMasterDataSection(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(text = item.second, fontWeight = FontWeight.Bold)
@@ -678,8 +1092,8 @@ fun SecurityManagementTab(
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Security Protections", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -703,8 +1117,8 @@ fun SecurityManagementTab(
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Change 6-Digit Security PIN", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -747,7 +1161,7 @@ fun AuditLogsTab(auditLogs: List<AuditLogEntity>) {
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (log.actionType.contains("DELETE")) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceContainerLow
+                        containerColor = if (log.actionType.contains("DELETE")) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surface
                     )
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
@@ -756,6 +1170,69 @@ fun AuditLogsTab(auditLogs: List<AuditLogEntity>) {
                         Text(text = "Cashier: ${log.cashierName}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun WholesaleManagementPlaceholder(products: List<ProductEntity>) {
+    val wholesaleItems = products.filter { it.isWholesaleParent || (it.itemsPerWholesalePack ?: 0) > 0 }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Wholesale Catalog", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (wholesaleItems.isEmpty()) {
+            Text("No wholesale items configured yet.", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(wholesaleItems) { item ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(text = item.name, fontWeight = FontWeight.Bold)
+                            Text(text = "Wholesale Price: ₱${"%.2f".format(item.sellingPrice)} | Pack Items: ${item.itemsPerWholesalePack ?: 1}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SyncBackupPlaceholder(securitySettings: SecuritySettingsEntity?) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Sync & Local Backup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Google Drive Delta Sync Engine: Active", fontWeight = FontWeight.Bold)
+                Text("Automatic local database pre-sync backups enabled.")
+                Text("Store Name: ${securitySettings?.storeName ?: "Default Store"}")
+            }
+        }
+    }
+}
+
+@Composable
+fun AboutAppPlaceholder() {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("About This App", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("G&J Store POS & Inventory Engine", fontWeight = FontWeight.Bold)
+                Text("Version 1.0 (Build 2026)")
+                Text("Offline-First Room Engine with Google Drive Delta Sync")
+                Text("Design: Modern Jetpack Compose Daylight / Dark Theme")
             }
         }
     }

@@ -55,15 +55,45 @@ class MainActivity : ComponentActivity() {
         syncRepo = SyncRepository(db)
 
         setContent {
-            MaterialTheme {
-                MainAppContent()
+            var isDarkTheme by remember { mutableStateOf(false) }
+
+            val lightColors = lightColorScheme(
+                primary = androidx.compose.ui.graphics.Color(0xFF0B5E38),
+                onPrimary = androidx.compose.ui.graphics.Color.White,
+                primaryContainer = androidx.compose.ui.graphics.Color(0xFFDCECE2),
+                onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFF042113),
+                surface = androidx.compose.ui.graphics.Color.White,
+                onSurface = androidx.compose.ui.graphics.Color(0xFF191C1A),
+                background = androidx.compose.ui.graphics.Color(0xFFEFF4F1),
+                onBackground = androidx.compose.ui.graphics.Color(0xFF191C1A)
+            )
+
+            val darkColors = darkColorScheme(
+                primary = androidx.compose.ui.graphics.Color(0xFF83D7A4),
+                onPrimary = androidx.compose.ui.graphics.Color(0xFF00381E),
+                primaryContainer = androidx.compose.ui.graphics.Color(0xFF00522E),
+                onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFF9FE2BD),
+                surface = androidx.compose.ui.graphics.Color(0xFF1E211F),
+                onSurface = androidx.compose.ui.graphics.Color(0xFFE1E3E0),
+                background = androidx.compose.ui.graphics.Color(0xFF121413),
+                onBackground = androidx.compose.ui.graphics.Color(0xFFE1E3E0)
+            )
+
+            MaterialTheme(colorScheme = if (isDarkTheme) darkColors else lightColors) {
+                MainAppContent(
+                    isDarkTheme = isDarkTheme,
+                    onToggleDarkTheme = { isDarkTheme = it }
+                )
             }
         }
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    fun MainAppContent() {
+    fun MainAppContent(
+        isDarkTheme: Boolean,
+        onToggleDarkTheme: (Boolean) -> Unit
+    ) {
         var currentTab by remember { mutableStateOf<TabScreen>(TabScreen.Search) }
 
         // Live States from Database Flows
@@ -350,6 +380,8 @@ class MainActivity : ComponentActivity() {
                         categories = categories,
                         brands = brands,
                         units = units,
+                        isDarkTheme = isDarkTheme,
+                        onToggleDarkTheme = onToggleDarkTheme,
                         onSaveProduct = { parentProduct, cashier, variants ->
                             lifecycleScope.launch {
                                 val existing = db.productDao().getProductById(parentProduct.id)
