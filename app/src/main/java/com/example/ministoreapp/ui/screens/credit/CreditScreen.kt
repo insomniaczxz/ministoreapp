@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.ministoreapp.data.local.entities.BanRecordEntity
@@ -26,6 +27,21 @@ import com.example.ministoreapp.ui.components.CashierVerificationDialog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
+
+fun getCreditAgeBadge(borrowedAt: Long, dueDate: Long?): String {
+    val now = System.currentTimeMillis()
+    val daysOld = ((now - borrowedAt) / (1000 * 60 * 60 * 24)).toInt().coerceAtLeast(0)
+
+    val ageText = when {
+        daysOld >= 365 -> "🔴 ${daysOld / 365} yr+ old"
+        daysOld >= 30 -> "🟠 ${daysOld / 30} mos old"
+        else -> "${daysOld}d old"
+    }
+
+    val isOverdue = dueDate != null && now > dueDate
+    return if (isOverdue) "⚠️ OVERDUE ($ageText)" else ageText
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,7 +51,7 @@ fun CreditScreen(
     cashiers: List<CashierEntity>,
     products: List<ProductEntity>,
     onAddCustomer: (CustomerEntity, CashierEntity) -> Unit,
-    onAddCredit: (CustomerEntity, Double, String, CashierEntity) -> Unit,
+    onAddCredit: (CustomerEntity, Double, String, Long, CashierEntity) -> Unit,
     onMakePayment: (CustomerEntity, Double, CashierEntity) -> Unit,
     getTransactionsForCustomerFlow: (String) -> kotlinx.coroutines.flow.Flow<List<CreditTransactionEntity>>
 ) {
@@ -70,7 +86,7 @@ fun CreditScreen(
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                 )
                 Text(
-                    text = "₱${"%.2f".format(totalOutstandingCredit)}",
+                    text = "₱${totalOutstandingCredit.roundToInt()}",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -152,8 +168,8 @@ fun CreditScreen(
             cashiers = cashiers,
             products = products,
             onDismiss = { customerForCreditAdd = null },
-            onAddCreditConfirmed = { amount, notes, cashier ->
-                onAddCredit(customer, amount, notes, cashier)
+            onAddCreditConfirmed = { amount, notes, borrowedAt, cashier ->
+                onAddCredit(customer, amount, notes, borrowedAt, cashier)
                 customerForCreditAdd = null
             }
         )
@@ -179,6 +195,8 @@ fun CustomerCard(
     onAddCreditClick: () -> Unit,
     onPayClick: () -> Unit
 ) {
+    val ageBadge = getCreditAgeBadge(customer.borrowedAt, customer.dueDate)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -195,11 +213,32 @@ fun CustomerCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = customer.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = customer.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    if (customer.balance > 0) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+                        ) {
+                            Text(
+                                text = ageBadge,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
                 if (customer.nickname.isNotBlank()) {
                     Text(
                         text = "Alias: ${customer.nickname}",
@@ -209,7 +248,7 @@ fun CustomerCard(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Balance: ₱${"%.2f".format(customer.balance)}",
+                    text = "Balance: ₱${customer.balance.roundToInt()}",
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
                     color = if (customer.balance > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
@@ -336,7 +375,7 @@ fun CustomerLedgerDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Current Balance: ₱${"%.2f".format(customer.balance)}",
+                    text = "Current Balance: ₱${customer.balance.roundToInt()}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = if (customer.balance > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
@@ -362,9 +401,9 @@ fun CustomerLedgerDialog(
                                         Text(text = txn.type, fontWeight = FontWeight.Bold)
                                         Text(text = dateFormat.format(Date(txn.timestamp)), style = MaterialTheme.typography.labelSmall)
                                     }
-                                    Text(text = "Amount: ₱${"%.2f".format(txn.totalAmount)}", fontWeight = FontWeight.SemiBold)
+                                    Text(text = "Amount: ₱${txn.totalAmount.roundToInt()}", fontWeight = FontWeight.SemiBold)
                                     if (txn.amountTendered > 0) {
-                                        Text(text = "Tendered: ₱${"%.2f".format(txn.amountTendered)} | Remaining: ₱${"%.2f".format(txn.remainingBalance)}", style = MaterialTheme.typography.bodySmall)
+                                        Text(text = "Tendered: ₱${txn.amountTendered.roundToInt()} | Remaining: ₱${txn.remainingBalance.roundToInt()}", style = MaterialTheme.typography.bodySmall)
                                     }
                                     if (txn.notes.isNotBlank()) {
                                         Text(text = "Notes: ${txn.notes}", style = MaterialTheme.typography.bodySmall)
@@ -390,11 +429,13 @@ fun AddCreditDialog(
     cashiers: List<CashierEntity>,
     products: List<ProductEntity>,
     onDismiss: () -> Unit,
-    onAddCreditConfirmed: (Double, String, CashierEntity) -> Unit
+    onAddCreditConfirmed: (Double, String, Long, CashierEntity) -> Unit
 ) {
     var manualName by remember { mutableStateOf("") }
     var amountInput by remember { mutableStateOf("") }
     var tenderedInput by remember { mutableStateOf("") }
+    var selectedBackdateChip by remember { mutableStateOf("TODAY") }
+    var borrowedAtTimestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var verifiedCashier by remember { mutableStateOf<CashierEntity?>(null) }
 
     val totalAmount = amountInput.toDoubleOrNull() ?: 0.0
@@ -410,7 +451,7 @@ fun AddCreditDialog(
                     OutlinedTextField(
                         value = manualName,
                         onValueChange = { manualName = it },
-                        label = { Text("Description / Items") },
+                        label = { Text("Description / Items Borrowed") },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -428,9 +469,51 @@ fun AddCreditDialog(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Text("Date Borrowed (Backdate old paper notebook lists):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(
+                            selected = selectedBackdateChip == "TODAY",
+                            onClick = {
+                                selectedBackdateChip = "TODAY"
+                                borrowedAtTimestamp = System.currentTimeMillis()
+                            },
+                            label = { Text("Today") },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        FilterChip(
+                            selected = selectedBackdateChip == "1_MONTH",
+                            onClick = {
+                                selectedBackdateChip = "1_MONTH"
+                                borrowedAtTimestamp = System.currentTimeMillis() - (30 * 24 * 60 * 60 * 1000L)
+                            },
+                            label = { Text("1 Mo Ago") },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        FilterChip(
+                            selected = selectedBackdateChip == "3_MONTHS",
+                            onClick = {
+                                selectedBackdateChip = "3_MONTHS"
+                                borrowedAtTimestamp = System.currentTimeMillis() - (90 * 24 * 60 * 60 * 1000L)
+                            },
+                            label = { Text("3 Mos Ago") },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        FilterChip(
+                            selected = selectedBackdateChip == "1_YEAR",
+                            onClick = {
+                                selectedBackdateChip = "1_YEAR"
+                                borrowedAtTimestamp = System.currentTimeMillis() - (365 * 24 * 60 * 60 * 1000L)
+                            },
+                            label = { Text("1 Yr Ago") },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+
                     if (tendered > 0) {
                         Text(
-                            text = "Net Credit to Add: ₱${"%.2f".format(netCreditAdded)}",
+                            text = "Net Credit to Add: ₱${netCreditAdded.roundToInt()}",
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -458,7 +541,7 @@ fun AddCreditDialog(
             onDismiss = onDismiss,
             onVerified = { cashier ->
                 val notes = if (manualName.isNotBlank()) manualName else "Credit Entry"
-                onAddCreditConfirmed(netCreditAdded, notes, cashier)
+                onAddCreditConfirmed(netCreditAdded, notes, borrowedAtTimestamp, cashier)
             }
         )
     }
@@ -483,7 +566,7 @@ fun PaymentDialog(
             title = { Text("Settle Payment for ${customer.name}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Outstanding Balance: ₱${"%.2f".format(customer.balance)}", fontWeight = FontWeight.Bold)
+                    Text("Outstanding Balance: ₱${customer.balance.roundToInt()}", fontWeight = FontWeight.Bold)
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(

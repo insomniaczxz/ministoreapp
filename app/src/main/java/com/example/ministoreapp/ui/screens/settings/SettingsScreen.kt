@@ -1,10 +1,12 @@
 package com.example.ministoreapp.ui.screens.settings
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -17,8 +19,10 @@ import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
@@ -37,10 +41,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.ministoreapp.data.local.entities.AuditLogEntity
 import com.example.ministoreapp.data.local.entities.BanRecordEntity
@@ -53,6 +60,7 @@ import com.example.ministoreapp.data.local.entities.ProductGroupEntity
 import com.example.ministoreapp.data.local.entities.SecuritySettingsEntity
 import com.example.ministoreapp.data.local.entities.StoreEntity
 import com.example.ministoreapp.data.local.entities.UnitEntity
+import com.example.ministoreapp.data.local.entities.VendorEntity
 import com.example.ministoreapp.data.local.entities.WholesaleUnitEntity
 import com.example.ministoreapp.domain.AppReleaseInfo
 import com.example.ministoreapp.domain.AppUpdateManager
@@ -79,6 +87,7 @@ fun SettingsScreen(
     units: List<UnitEntity>,
     containers: List<ContainerEntity> = emptyList(),
     wholesaleUnits: List<WholesaleUnitEntity> = emptyList(),
+    vendors: List<VendorEntity> = emptyList(),
     isDarkTheme: Boolean = false,
     onToggleDarkTheme: (Boolean) -> Unit = {},
     onSaveProductGroup: (group: ProductGroupEntity, generatedItems: List<ProductEntity>, cashier: CashierEntity) -> Unit,
@@ -90,6 +99,10 @@ fun SettingsScreen(
     onDeleteBanRecord: (BanRecordEntity, CashierEntity) -> Unit,
     onSaveMasterData: (type: String, name: String) -> Unit,
     onDeleteMasterData: (type: String, id: String) -> Unit,
+    onSaveVendor: (VendorEntity) -> Unit = {},
+    onDeleteVendor: (VendorEntity) -> Unit = {},
+    onExportBackupJson: () -> String = { "" },
+    onImportBackupJson: (String) -> Unit = {},
     onUpdateSecuritySettings: (SecuritySettingsEntity) -> Unit
 ) {
     val currentSettings = securitySettings ?: SecuritySettingsEntity()
@@ -116,6 +129,7 @@ fun SettingsScreen(
                         units = units,
                         containers = containers,
                         wholesaleUnits = wholesaleUnits,
+                        vendors = vendors,
                         onSaveProductGroup = onSaveProductGroup,
                         onDeleteSingleProduct = onDeleteSingleProduct,
                         onDeleteProductGroup = onDeleteProductGroup
@@ -126,7 +140,13 @@ fun SettingsScreen(
                         onSaveCashier = onSaveCashier,
                         onDeleteCashier = onDeleteCashier
                     )
-                    "DROPDOWNS", "VENDOR_STORES" -> MasterDataManagementTab(
+                    "VENDORS" -> VendorsManagementTab(
+                        vendors = vendors,
+                        stores = stores,
+                        onSaveVendor = onSaveVendor,
+                        onDeleteVendor = onDeleteVendor
+                    )
+                    "DROPDOWNS" -> MasterDataManagementTab(
                         stores = stores,
                         categories = categories,
                         brands = brands,
@@ -145,7 +165,7 @@ fun SettingsScreen(
                         onUpdateSecuritySettings = onUpdateSecuritySettings
                     )
                     "BAN_LIST" -> BanRecordsSection(banRecords, cashiers, onSaveBanRecord, onDeleteBanRecord)
-                    "SYNC" -> SyncBackupPlaceholder(securitySettings)
+                    "SYNC" -> SyncBackupPlaceholder(securitySettings, onExportBackupJson, onImportBackupJson)
                     "AUDIT_LOGS" -> AuditLogsTab(auditLogs = auditLogs)
                     "STORE_PROFILE" -> StoreProfileManagementTab(
                         securitySettings = securitySettings,
@@ -165,7 +185,7 @@ fun SettingsScreen(
                 item {
                     SettingsTileRow(
                         title = "Products",
-                        subtitle = "${products.size} live product rows · bulk calculator",
+                        subtitle = "${productGroups.size.let { if (it > 0) it else products.size }} product recipes · bulk calculator",
                         icon = Icons.Default.Inventory2,
                         onClick = { onActiveDetailViewChange("PRODUCTS") }
                     )
@@ -181,7 +201,67 @@ fun SettingsScreen(
                     )
                 }
 
-                // 3. Dark Theme Switch
+                // 3. Vendors
+                item {
+                    SettingsTileRow(
+                        title = "Vendors",
+                        subtitle = "${vendors.size.let { if (it > 0) it else stores.size }} suppliers & truck panel routes",
+                        icon = Icons.Default.Store,
+                        onClick = { onActiveDetailViewChange("VENDORS") }
+                    )
+                }
+
+                // 4. Dropdown Options
+                item {
+                    SettingsTileRow(
+                        title = "Dropdown Options",
+                        subtitle = "${categories.size} categories · ${brands.size} brands · ${containers.size} containers",
+                        icon = Icons.AutoMirrored.Filled.ListAlt,
+                        onClick = { onActiveDetailViewChange("DROPDOWNS") }
+                    )
+                }
+
+                // 5. Credit Ban List
+                item {
+                    SettingsTileRow(
+                        title = "Credit Ban List",
+                        subtitle = "${banRecords.size} people flagged",
+                        icon = Icons.Default.Block,
+                        onClick = { onActiveDetailViewChange("BAN_LIST") }
+                    )
+                }
+
+                // 6. Audit Logs
+                item {
+                    SettingsTileRow(
+                        title = "Audit Logs",
+                        subtitle = "${auditLogs.size} recorded actions",
+                        icon = Icons.Default.Shield,
+                        onClick = { onActiveDetailViewChange("AUDIT_LOGS") }
+                    )
+                }
+
+                // 7. Security
+                item {
+                    SettingsTileRow(
+                        title = "Security",
+                        subtitle = "App Launch, Settings PIN & 6-digit PIN change",
+                        icon = Icons.Default.Lock,
+                        onClick = { onActiveDetailViewChange("SECURITY") }
+                    )
+                }
+
+                // 8. Store Profile
+                item {
+                    SettingsTileRow(
+                        title = "Store Profile",
+                        subtitle = currentSettings.storeName,
+                        icon = Icons.Default.Storefront,
+                        onClick = { onActiveDetailViewChange("STORE_PROFILE") }
+                    )
+                }
+
+                // 9. Dark Theme Switch
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -238,81 +318,21 @@ fun SettingsScreen(
                     }
                 }
 
-                // 4. Vendor stores
+                // 10. Sync & Backup
                 item {
                     SettingsTileRow(
-                        title = "Vendor stores",
-                        subtitle = "${stores.size} stores used for recommendations",
-                        icon = Icons.Default.Store,
-                        onClick = { onActiveDetailViewChange("VENDOR_STORES") }
-                    )
-                }
-
-                // 5. Dropdown options
-                item {
-                    SettingsTileRow(
-                        title = "Dropdown options",
-                        subtitle = "${categories.size} categories · ${brands.size} brands · ${containers.size} containers",
-                        icon = Icons.AutoMirrored.Filled.ListAlt,
-                        onClick = { onActiveDetailViewChange("DROPDOWNS") }
-                    )
-                }
-
-                // 6. Ban list
-                item {
-                    SettingsTileRow(
-                        title = "Ban list",
-                        subtitle = "${banRecords.size} people flagged",
-                        icon = Icons.Default.Block,
-                        onClick = { onActiveDetailViewChange("BAN_LIST") }
-                    )
-                }
-
-                // 7. Security
-                item {
-                    SettingsTileRow(
-                        title = "Security",
-                        subtitle = "App launch, settings PIN & 6-digit PIN change",
-                        icon = Icons.Default.Lock,
-                        onClick = { onActiveDetailViewChange("SECURITY") }
-                    )
-                }
-
-                // 8. Sync & backup
-                item {
-                    SettingsTileRow(
-                        title = "Sync & backup",
-                        subtitle = "Google Drive delta sync & local backup",
+                        title = "Sync & Backup",
+                        subtitle = "Google Drive delta sync & JSON backup/restore",
                         icon = Icons.Default.Sync,
                         onClick = { onActiveDetailViewChange("SYNC") }
                     )
                 }
 
-                // 9. Audit logs
+                // 11. About + Update App
                 item {
                     SettingsTileRow(
-                        title = "Audit logs",
-                        subtitle = "${auditLogs.size} recorded actions",
-                        icon = Icons.Default.Shield,
-                        onClick = { onActiveDetailViewChange("AUDIT_LOGS") }
-                    )
-                }
-
-                // 10. Store profile
-                item {
-                    SettingsTileRow(
-                        title = "Store profile",
-                        subtitle = currentSettings.storeName,
-                        icon = Icons.Default.Storefront,
-                        onClick = { onActiveDetailViewChange("STORE_PROFILE") }
-                    )
-                }
-
-                // 11. About this app
-                item {
-                    SettingsTileRow(
-                        title = "About this app",
-                        subtitle = "Ministoreapp · Powered by James Lasquite",
+                        title = "About + Update App",
+                        subtitle = "Ministoreapp v${AppUpdateManager.CURRENT_VERSION} · Check for Updates",
                         icon = Icons.Default.Info,
                         onClick = { onActiveDetailViewChange("ABOUT") }
                     )
@@ -326,14 +346,14 @@ fun getDetailTitle(key: String?): String {
     return when (key) {
         "PRODUCTS" -> "Products"
         "CASHIERS" -> "Cashiers & PIN"
-        "DROPDOWNS" -> "Dropdown Options & Master Data"
-        "VENDOR_STORES" -> "Vendor Stores"
-        "SECURITY" -> "Security Protections"
-        "BAN_LIST" -> "Ban List"
+        "VENDORS" -> "Vendors"
+        "DROPDOWNS" -> "Dropdown Options"
+        "BAN_LIST" -> "Credit Ban List"
         "AUDIT_LOGS" -> "Audit Logs"
+        "SECURITY" -> "Security"
+        "STORE_PROFILE" -> "Store Profile"
         "SYNC" -> "Sync & Backup"
-        "STORE_PROFILE" -> "Store Profile & Info"
-        "ABOUT" -> "About This App"
+        "ABOUT" -> "About + Update App"
         else -> "Settings"
     }
 }
@@ -416,6 +436,7 @@ fun ProductsManagementTab(
     units: List<UnitEntity>,
     containers: List<ContainerEntity> = emptyList(),
     wholesaleUnits: List<WholesaleUnitEntity> = emptyList(),
+    vendors: List<VendorEntity> = emptyList(),
     onSaveProductGroup: (group: ProductGroupEntity, generatedItems: List<ProductEntity>, cashier: CashierEntity) -> Unit,
     onDeleteSingleProduct: (product: ProductEntity, cashier: CashierEntity) -> Unit,
     onDeleteProductGroup: (groupId: String, cashier: CashierEntity) -> Unit
@@ -423,13 +444,23 @@ fun ProductsManagementTab(
     var filterQuery by remember { mutableStateOf("") }
     var showAddProductDialog by remember { mutableStateOf(false) }
     var editingProductGroup by remember { mutableStateOf<ProductGroupEntity?>(null) }
-    var productToDelete by remember { mutableStateOf<ProductEntity?>(null) }
 
     var verifySingleDeleteProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var verifyGroupDeleteId by remember { mutableStateOf<String?>(null) }
 
-    val filteredProducts = remember(products, filterQuery) {
-        products.filter {
+    val filteredGroups = remember(productGroups, filterQuery) {
+        productGroups.filter { group ->
+            filterQuery.isBlank() ||
+                group.baseName.contains(filterQuery, ignoreCase = true) ||
+                group.aliases.contains(filterQuery, ignoreCase = true) ||
+                group.brand.contains(filterQuery, ignoreCase = true) ||
+                group.category.contains(filterQuery, ignoreCase = true)
+        }
+    }
+
+    val standaloneProducts = remember(products, productGroups, filterQuery) {
+        val groupIds = productGroups.map { it.id }.toSet()
+        products.filter { it.groupId == null || !groupIds.contains(it.groupId) }.filter {
             filterQuery.isBlank() ||
                 it.name.contains(filterQuery, ignoreCase = true) ||
                 it.aliases.contains(filterQuery, ignoreCase = true) ||
@@ -447,17 +478,19 @@ fun ProductsManagementTab(
             OutlinedTextField(
                 value = filterQuery,
                 onValueChange = { filterQuery = it },
-                placeholder = { Text("Filter products, alias...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                placeholder = { Text("Filter products, alias...", style = MaterialTheme.typography.bodyMedium) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 trailingIcon = {
                     if (filterQuery.isNotEmpty()) {
                         IconButton(onClick = { filterQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(18.dp))
                         }
                     }
                 },
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(50.dp),
                 singleLine = true
             )
 
@@ -465,7 +498,8 @@ fun ProductsManagementTab(
                 onClick = { showAddProductDialog = true },
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B5E38)),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                modifier = Modifier.height(50.dp)
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
@@ -475,98 +509,112 @@ fun ProductsManagementTab(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(filteredProducts, key = { it.id }) { product ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            val parentGroup = productGroups.find { it.id == product.groupId }
-                            editingProductGroup = parentGroup ?: ProductGroupEntity(
-                                id = product.groupId ?: UUID.randomUUID().toString(),
-                                baseName = product.name,
-                                aliases = product.aliases,
-                                brand = product.brand,
-                                category = product.category,
-                                storeName = product.storeName,
-                                unitSize = product.unitSize,
-                                containerType = product.unit
-                            )
-                        },
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+        if (filteredGroups.isEmpty() && standaloneProducts.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = if (filterQuery.isBlank()) "No product recipes." else "No products matching '$filterQuery'",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(filteredGroups, key = { it.id }) { group ->
+                    val groupProducts = products.filter { it.groupId == group.id }
+                    ProductGroupCardItem(
+                        group = group,
+                        groupProducts = groupProducts,
+                        onEditClick = { editingProductGroup = group },
+                        onDeleteGroupClick = { verifyGroupDeleteId = group.id },
+                        onDeleteSingleProductClick = { verifySingleDeleteProduct = it }
+                    )
+                }
+
+                items(standaloneProducts, key = { it.id }) { product ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                editingProductGroup = ProductGroupEntity(
+                                    id = product.groupId ?: UUID.randomUUID().toString(),
+                                    baseName = product.name,
+                                    aliases = product.aliases,
+                                    brand = product.brand,
+                                    category = product.category,
+                                    storeName = product.storeName,
+                                    unitSize = product.unitSize,
+                                    containerType = product.unit
+                                )
+                            },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
                         Row(
+                            modifier = Modifier.padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFFE3EFE9)),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.LocalOffer,
-                                    contentDescription = null,
-                                    tint = Color(0xFF0B5E38),
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFFE3EFE9)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.LocalOffer,
+                                        contentDescription = null,
+                                        tint = Color(0xFF0B5E38),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+
+                                Column {
+                                    Text(
+                                        text = product.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+
+                                    Text(
+                                        text = "Cost ₱${product.cost.roundToInt()}${if (product.storeName.isNotBlank()) " · ${product.storeName}" else ""}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
 
-                            Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
                                 Text(
-                                    text = product.name,
+                                    text = "₱${product.sellingPrice.roundToInt()}",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
 
-                                Text(
-                                    text = "Cost ₱${product.cost.roundToInt()}${if (product.storeName.isNotBlank()) " · ${product.storeName}" else ""}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                if (product.aliases.isNotBlank()) {
-                                    Text(
-                                        text = "Aliases: ${product.aliases}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary
+                                IconButton(
+                                    onClick = { verifySingleDeleteProduct = product },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
-                            }
-                        }
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = "₱${product.sellingPrice.roundToInt()}",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-
-                            IconButton(
-                                onClick = { productToDelete = product },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete",
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(18.dp)
-                                )
                             }
                         }
                     }
@@ -585,6 +633,7 @@ fun ProductsManagementTab(
             units = units,
             containers = containers,
             wholesaleUnits = wholesaleUnits,
+            vendors = vendors,
             onDismiss = {
                 showAddProductDialog = false
                 editingProductGroup = null
@@ -595,56 +644,6 @@ fun ProductsManagementTab(
                 editingProductGroup = null
             }
         )
-    }
-
-    productToDelete?.let { prod ->
-        val groupItemCount = products.count { it.groupId == prod.groupId && prod.groupId != null }
-
-        if (groupItemCount > 1) {
-            AlertDialog(
-                onDismissRequest = { productToDelete = null },
-                title = { Text("Delete Product Option", fontWeight = FontWeight.Bold) },
-                text = { Text("Do you want to delete ONLY '${prod.name}' or delete ALL $groupItemCount items in this group?") },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            verifySingleDeleteProduct = prod
-                            productToDelete = null
-                        },
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Delete ONLY This Item")
-                    }
-                },
-                dismissButton = {
-                    Button(
-                        onClick = {
-                            verifyGroupDeleteId = prod.groupId ?: prod.id
-                            productToDelete = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Delete ALL $groupItemCount Items")
-                    }
-                },
-                shape = RoundedCornerShape(24.dp)
-            )
-        } else {
-            CashierVerificationDialog(
-                cashiers = cashiers,
-                actionTitle = "Verify Cashier to Delete '${prod.name}'",
-                onDismiss = { productToDelete = null },
-                onVerified = { cashier ->
-                    if (prod.groupId != null) {
-                        onDeleteProductGroup(prod.groupId, cashier)
-                    } else {
-                        onDeleteSingleProduct(prod, cashier)
-                    }
-                    productToDelete = null
-                }
-            )
-        }
     }
 
     verifySingleDeleteProduct?.let { prod ->
@@ -669,6 +668,230 @@ fun ProductsManagementTab(
                 verifyGroupDeleteId = null
             }
         )
+    }
+}
+
+@Composable
+fun ProductGroupCardItem(
+    group: ProductGroupEntity,
+    groupProducts: List<ProductEntity>,
+    onEditClick: () -> Unit,
+    onDeleteGroupClick: () -> Unit,
+    onDeleteSingleProductClick: (ProductEntity) -> Unit
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    val title = remember(group) {
+        buildString {
+            if (group.baseName.contains("*")) {
+                val variantsList = group.variants.split(",").map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
+                val cleanBase = group.baseName.replace("*", "").trim()
+                if (variantsList.isNotBlank()) {
+                    append(variantsList)
+                    if (cleanBase.isNotBlank()) append(" — ")
+                }
+                append(cleanBase)
+            } else {
+                append(group.baseName)
+            }
+            if (group.unitSize.isNotBlank()) append(" ${group.unitSize}")
+            if (group.containerType.isNotBlank()) append(" ${group.containerType}")
+        }
+    }
+
+    val subtitle = buildString {
+        if (group.hasWholesale && group.wholesaleCost > 0) {
+            val perPcCost = if (group.itemsPerPack > 0) (group.wholesaleCost / group.itemsPerPack).roundToInt() else 0
+            append("Case Cost: ₱${group.wholesaleCost.roundToInt()} (₱$perPcCost/pc)")
+        } else if (group.retailCost > 0) {
+            append("Cost: ₱${group.retailCost.roundToInt()}")
+        }
+        if (group.aliases.isNotBlank()) {
+            if (this.isNotEmpty()) append(" · ")
+            append("Aliases: ${group.aliases}")
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFE3EFE9)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocalOffer,
+                            contentDescription = null,
+                            tint = Color(0xFF0B5E38),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        if (subtitle.isNotBlank()) {
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onEditClick, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit Group",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    IconButton(onClick = onDeleteGroupClick, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete Group",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Quick Price Chips Row (including Cold Case chip)
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (group.hasWholesale && group.wholesaleSellingPrice > 0) {
+                    item {
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text("Case: ₱${group.wholesaleSellingPrice.roundToInt()}", style = MaterialTheme.typography.labelSmall) },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+                }
+                if (group.hasRetail && group.retailSellingPrice > 0) {
+                    item {
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text("Retail: ₱${group.retailSellingPrice.roundToInt()}", style = MaterialTheme.typography.labelSmall) },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+                }
+                if (group.isBeverage && group.coldRetailMarkup > 0) {
+                    item {
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text("Cold: ₱${(group.retailSellingPrice + group.coldRetailMarkup).roundToInt()}", style = MaterialTheme.typography.labelSmall) },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+                }
+                if (group.isBeverage && group.hasWholesale && group.coldCaseMarkup > 0) {
+                    item {
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text("Cold Case: ₱${(group.wholesaleSellingPrice + group.coldCaseMarkup).roundToInt()}", style = MaterialTheme.typography.labelSmall) },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+                }
+            }
+
+            // Expandable Dropdown Arrow
+            if (groupProducts.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { isExpanded = !isExpanded }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isExpanded) "▲ Hide ${groupProducts.size} items" else "▼ Show ${groupProducts.size} generated items",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0B5E38)
+                    )
+                }
+
+                if (isExpanded) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        groupProducts.forEach { item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = item.name,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "₱${item.sellingPrice.roundToInt()}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                IconButton(
+                                    onClick = { onDeleteSingleProductClick(item) },
+                                    modifier = Modifier.size(20.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete Item",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -760,6 +983,7 @@ fun AddProductDialog(
     units: List<UnitEntity>,
     containers: List<ContainerEntity> = emptyList(),
     wholesaleUnits: List<WholesaleUnitEntity> = emptyList(),
+    vendors: List<VendorEntity> = emptyList(),
     onDismiss: () -> Unit,
     onSaveGroup: (group: ProductGroupEntity, generatedItems: List<ProductEntity>, cashier: CashierEntity) -> Unit
 ) {
@@ -782,10 +1006,14 @@ fun AddProductDialog(
     var wholesaleManualPriceInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.wholesaleSellingPrice > 0) existingGroup.wholesaleSellingPrice.roundToInt().toString() else "") }
     var showWholesaleInSearch by remember { mutableStateOf(existingGroup?.showWholesaleInSearch ?: true) }
 
-    // Block 3: Retail / Per Piece (Retail Fixed Markup Removed)
+    // Block 3: Retail / Per Piece (Retail Fixed Markup Removed) & Tingi Bundle Pricing
     var hasRetail by remember { mutableStateOf(existingGroup?.hasRetail ?: true) }
     var retailCostInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.retailCost > 0) existingGroup.retailCost.roundToInt().toString() else "") }
     var retailManualPriceInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.retailSellingPrice > 0) existingGroup.retailSellingPrice.roundToInt().toString() else "") }
+
+    var hasBundle by remember { mutableStateOf(existingGroup?.bundlePrice != null && existingGroup.bundlePrice > 0) }
+    var bundleQtyInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.bundleQty > 1) existingGroup.bundleQty.toString() else "3") }
+    var bundlePriceInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.bundlePrice > 0) existingGroup.bundlePrice.roundToInt().toString() else "5") }
 
     // Block 4: Cold Beverage (Defaults cleared)
     var isBeverage by remember { mutableStateOf(existingGroup?.isBeverage ?: false) }
@@ -796,7 +1024,9 @@ fun AddProductDialog(
     val brandSuggestions = remember(brands) { brands.map { it.name }.distinct() }
     val categorySuggestions = remember(categories) { categories.map { it.name }.distinct() }
     val containerSuggestions = remember(containers, units) { (containers.map { it.name } + units.map { it.name }).distinct() }
-    val wholesaleUnitSuggestions = remember(wholesaleUnits) { (listOf("Case", "Box", "Tie", "Dozen", "Pack") + wholesaleUnits.map { it.name }).distinct() }
+    // Wholesale Unit suggestions loaded ONLY from Wholesale Units created in Settings > Dropdown Options
+    val wholesaleUnitSuggestions = remember(wholesaleUnits) { wholesaleUnits.map { it.name }.distinct() }
+    val storeSuggestions = remember(vendors, stores) { (vendors.map { it.name } + stores.map { it.name }).distinct() }
 
     // Computed Values
     val wholesaleCost = wholesaleCostInput.toDoubleOrNull() ?: 0.0
@@ -849,13 +1079,15 @@ fun AddProductDialog(
     val previewItems = remember(
         baseName, aliases, unitSize, containerType, variantsInput,
         hasWholesale, wholesaleUnit, wholesaleCost, itemsPerPack, wholesaleSellingPrice, showWholesaleInSearch,
-        hasRetail, computedRetailCost, retailSellingPrice,
+        hasRetail, computedRetailCost, retailSellingPrice, hasBundle, bundleQtyInput, bundlePriceInput,
         isBeverage, coldRetailPrice, coldCasePrice, excludedKeysList
     ) {
         val list = mutableListOf<PreviewItem>()
         if (baseName.isBlank()) return@remember list
 
         val generatedNames = buildProductNames(baseName, variantsInput)
+        val bQty = if (hasBundle) bundleQtyInput.toIntOrNull() ?: 1 else 1
+        val bPrice = if (hasBundle) bundlePriceInput.toDoubleOrNull() ?: 0.0 else 0.0
 
         generatedNames.forEach { name ->
             val sizePackagingText = buildString {
@@ -900,18 +1132,28 @@ fun AddProductDialog(
                 }
             }
 
-            // 2. Retail Single Piece
+            // 2. Retail Single Piece or Tingi Bundle
             if (hasRetail) {
                 val pieceUnitText = containerType.ifBlank { "pcs" }
                 val comboKey = "${name}_main_reg"
+
+                val finalRetailLabel = if (hasBundle && bQty > 1 && bPrice > 0) {
+                    if (retailSellingPrice > 0) "$name$sizePackagingText ($bQty for ₱${bPrice.roundToInt()} or ₱${retailSellingPrice.roundToInt()} ea)"
+                    else "$name$sizePackagingText ($bQty for ₱${bPrice.roundToInt()})"
+                } else {
+                    "$name$sizePackagingText (1 $pieceUnitText)"
+                }
+
+                val finalRetailPrice = if (hasBundle && bQty > 1 && bPrice > 0) bPrice else retailSellingPrice
+
                 list.add(
                     PreviewItem(
                         comboKey = comboKey,
-                        displayName = "$name$sizePackagingText (1 $pieceUnitText)",
+                        displayName = finalRetailLabel,
                         unitSize = unitSize,
                         unit = pieceUnitText,
                         cost = computedRetailCost,
-                        defaultSellingPrice = retailSellingPrice,
+                        defaultSellingPrice = finalRetailPrice,
                         variantType = "RETAIL",
                         isWholesale = false,
                         itemsPerPack = 1,
@@ -969,6 +1211,8 @@ fun AddProductDialog(
                         AutoCompletableOutlinedTextField(value = category, onValueChange = { category = it }, label = "Category", suggestions = categorySuggestions, modifier = Modifier.weight(1f))
                     }
 
+                    AutoCompletableOutlinedTextField(value = storeName, onValueChange = { storeName = it }, label = "Vendor Store (Supplied By)", suggestions = storeSuggestions)
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(value = unitSize, onValueChange = { unitSize = it }, label = { Text("Unit Size (1L / 65g)") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f), singleLine = true)
                         AutoCompletableOutlinedTextField(value = containerType, onValueChange = { containerType = it }, label = "Container (Bottle/Sachet)", suggestions = containerSuggestions, modifier = Modifier.weight(1f))
@@ -1006,7 +1250,7 @@ fun AddProductDialog(
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-                    // Block 3: Retail
+                    // Block 3: Retail & Tingi Bundle Pricing
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = hasRetail, onCheckedChange = { hasRetail = it })
                         Text("Main Product (Per Piece / Retail)", fontWeight = FontWeight.Bold)
@@ -1021,6 +1265,41 @@ fun AddProductDialog(
                                 }
                                 OutlinedTextField(value = retailManualPriceInput, onValueChange = { retailManualPriceInput = it }, label = { Text("Retail Price Override (₱)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
                                 Text("Calculated Retail Price: ₱${retailSellingPrice.roundToInt()}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = hasBundle, onCheckedChange = { hasBundle = it })
+                                    Text("Enable Tingi Bundle Price (e.g. 3 for ₱5)", fontWeight = FontWeight.Bold)
+                                }
+
+                                if (hasBundle) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedTextField(
+                                            value = bundleQtyInput,
+                                            onValueChange = { bundleQtyInput = it },
+                                            label = { Text("Bundle Qty (e.g. 3)") },
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+                                        OutlinedTextField(
+                                            value = bundlePriceInput,
+                                            onValueChange = { bundlePriceInput = it },
+                                            label = { Text("Bundle Price (₱)") },
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+                                    }
+                                    val bQty = bundleQtyInput.toIntOrNull() ?: 1
+                                    val bPrice = bundlePriceInput.toDoubleOrNull() ?: 0.0
+                                    if (bQty > 1 && bPrice > 0 && computedRetailCost > 0) {
+                                        val bundleCost = computedRetailCost * bQty
+                                        val profit = bPrice - bundleCost
+                                        Text("Cost for $bQty pcs: ₱${bundleCost.roundToInt()} ➔ Profit: +₱${profit.roundToInt()}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
                             }
                         }
                     }
@@ -1156,6 +1435,8 @@ fun AddProductDialog(
                     retailMarkupType = "FIXED",
                     retailMarkupValue = 0.0,
                     retailSellingPrice = retailSellingPrice,
+                    bundleQty = if (hasBundle) bundleQtyInput.toIntOrNull() ?: 1 else 1,
+                    bundlePrice = if (hasBundle) bundlePriceInput.toDoubleOrNull() ?: 0.0 else 0.0,
                     isBeverage = isBeverage,
                     coldRetailMarkup = coldRetailMarkupInput.toDoubleOrNull() ?: 0.0,
                     coldCaseMarkup = coldCaseMarkupInput.toDoubleOrNull() ?: 0.0,
@@ -1203,6 +1484,324 @@ fun AddProductDialog(
                 }
             }
         )
+    }
+}
+
+@Composable
+fun VendorsManagementTab(
+    vendors: List<VendorEntity>,
+    stores: List<StoreEntity>,
+    onSaveVendor: (VendorEntity) -> Unit,
+    onDeleteVendor: (VendorEntity) -> Unit
+) {
+    var showAddModal by remember { mutableStateOf(false) }
+    var editingVendor by remember { mutableStateOf<VendorEntity?>(null) }
+    var deletingVendor by remember { mutableStateOf<VendorEntity?>(null) }
+
+    val allVendorNames = remember(vendors, stores) {
+        val list = vendors.map { it.name }.toMutableList()
+        stores.map { it.name }.filter { !list.contains(it) }.forEach { list.add(it) }
+        list
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Suppliers & Vendors (${allVendorNames.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+            Button(
+                onClick = { showAddModal = true },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B5E38))
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Add Vendor", fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (vendors.isEmpty() && stores.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No vendors registered.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(vendors, key = { it.id }) { vendor ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Default.Store, contentDescription = null, tint = Color(0xFF0B5E38))
+                                    Text(text = vendor.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                }
+
+                                Row {
+                                    IconButton(onClick = { editingVendor = vendor }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                    }
+                                    IconButton(onClick = { deletingVendor = vendor }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+
+                            if (vendor.ownerName.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Owner: ${vendor.ownerName}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                            }
+
+                            if (vendor.productsSold.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Products Sold: ${vendor.productsSold}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            }
+
+                            if (vendor.address.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Address: ${vendor.address}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+
+                            if (vendor.contactNumber.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Vendor Contact: ${vendor.contactNumber}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                            }
+
+                            if (vendor.agentName.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Agent: ${vendor.agentName}${if (vendor.agentContactNumber.isNotBlank()) " (${vendor.agentContactNumber})" else ""}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            }
+
+                            if (vendor.isTruckPanel) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFFE3EFE9)
+                                ) {
+                                    Text(
+                                        text = "🚛 Truck Panel Route${if (vendor.routeSchedule.isNotBlank()) ": ${vendor.routeSchedule}" else ""}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0B5E38),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddModal || editingVendor != null) {
+        val initial = editingVendor
+        var nameInput by remember { mutableStateOf(initial?.name ?: "") }
+        var ownerInput by remember { mutableStateOf(initial?.ownerName ?: "") }
+        var productsSoldInput by remember { mutableStateOf(initial?.productsSold ?: "") }
+        var addressInput by remember { mutableStateOf(initial?.address ?: "") }
+        var contactInput by remember { mutableStateOf(initial?.contactNumber ?: "") }
+        var agentNameInput by remember { mutableStateOf(initial?.agentName ?: "") }
+        var agentContactInput by remember { mutableStateOf(initial?.agentContactNumber ?: "") }
+        var isTruckPanelInput by remember { mutableStateOf(initial?.isTruckPanel ?: false) }
+        var routeScheduleType by remember { mutableStateOf(initial?.routeScheduleType ?: "DAILY") }
+        var dailyRouteInput by remember { mutableStateOf(initial?.routeSchedule ?: "") }
+
+        // Specific Days State
+        var monChecked by remember { mutableStateOf(false) }
+        var monRoute by remember { mutableStateOf("") }
+        var tueChecked by remember { mutableStateOf(false) }
+        var tueRoute by remember { mutableStateOf("") }
+        var wedChecked by remember { mutableStateOf(false) }
+        var wedRoute by remember { mutableStateOf("") }
+        var thuChecked by remember { mutableStateOf(false) }
+        var thuRoute by remember { mutableStateOf("") }
+        var friChecked by remember { mutableStateOf(false) }
+        var friRoute by remember { mutableStateOf("") }
+        var satChecked by remember { mutableStateOf(false) }
+        var satRoute by remember { mutableStateOf("") }
+        var sunChecked by remember { mutableStateOf(false) }
+        var sunRoute by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = {
+                showAddModal = false
+                editingVendor = null
+            },
+            title = { Text(if (initial != null) "Edit Vendor" else "Add New Vendor", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(value = nameInput, onValueChange = { nameInput = it }, label = { Text("Name / Company Name") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    OutlinedTextField(value = ownerInput, onValueChange = { ownerInput = it }, label = { Text("Owner Name") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    OutlinedTextField(value = productsSoldInput, onValueChange = { productsSoldInput = it }, label = { Text("Product/s Sold (separated by comma)") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    OutlinedTextField(value = addressInput, onValueChange = { addressInput = it }, label = { Text("Address") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    OutlinedTextField(value = contactInput, onValueChange = { contactInput = it }, label = { Text("Vendor Contact #") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    OutlinedTextField(value = agentNameInput, onValueChange = { agentNameInput = it }, label = { Text("Agent Name") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    OutlinedTextField(value = agentContactInput, onValueChange = { agentContactInput = it }, label = { Text("Agent Contact #") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = isTruckPanelInput, onCheckedChange = { isTruckPanelInput = it })
+                        Text("Is Truck Panel / Delivery Route?", fontWeight = FontWeight.Bold)
+                    }
+
+                    if (isTruckPanelInput) {
+                        Text("Route Schedule Mode:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = routeScheduleType == "DAILY",
+                                onClick = { routeScheduleType = "DAILY" },
+                                label = { Text("Daily Route") },
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            FilterChip(
+                                selected = routeScheduleType == "SPECIFIC_DAYS",
+                                onClick = { routeScheduleType = "SPECIFIC_DAYS" },
+                                label = { Text("Specific Days (Mon - Sun)") },
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+
+                        if (routeScheduleType == "DAILY") {
+                            OutlinedTextField(
+                                value = dailyRouteInput,
+                                onValueChange = { dailyRouteInput = it },
+                                label = { Text("Daily Route Schedule & Notes") },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                DayRouteRow("Monday", monChecked, { monChecked = it }, monRoute, { monRoute = it })
+                                DayRouteRow("Tuesday", tueChecked, { tueChecked = it }, tueRoute, { tueRoute = it })
+                                DayRouteRow("Wednesday", wedChecked, { wedChecked = it }, wedRoute, { wedRoute = it })
+                                DayRouteRow("Thursday", thuChecked, { thuChecked = it }, thuRoute, { thuRoute = it })
+                                DayRouteRow("Friday", friChecked, { friChecked = it }, friRoute, { friRoute = it })
+                                DayRouteRow("Saturday", satChecked, { satChecked = it }, satRoute, { satRoute = it })
+                                DayRouteRow("Sunday", sunChecked, { sunChecked = it }, sunRoute, { sunRoute = it })
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val finalSchedule = if (isTruckPanelInput) {
+                            if (routeScheduleType == "DAILY") dailyRouteInput else {
+                                listOfNotNull(
+                                    if (monChecked) "Mon: ${monRoute.ifBlank { "Route" }}" else null,
+                                    if (tueChecked) "Tue: ${tueRoute.ifBlank { "Route" }}" else null,
+                                    if (wedChecked) "Wed: ${wedRoute.ifBlank { "Route" }}" else null,
+                                    if (thuChecked) "Thu: ${thuRoute.ifBlank { "Route" }}" else null,
+                                    if (friChecked) "Fri: ${friRoute.ifBlank { "Route" }}" else null,
+                                    if (satChecked) "Sat: ${satRoute.ifBlank { "Route" }}" else null,
+                                    if (sunChecked) "Sun: ${sunRoute.ifBlank { "Route" }}" else null
+                                ).joinToString(" | ")
+                            }
+                        } else ""
+
+                        val vendorToSave = VendorEntity(
+                            id = initial?.id ?: UUID.randomUUID().toString(),
+                            name = nameInput,
+                            ownerName = ownerInput,
+                            productsSold = productsSoldInput,
+                            address = addressInput,
+                            contactNumber = contactInput,
+                            agentName = agentNameInput,
+                            agentContactNumber = agentContactInput,
+                            isTruckPanel = isTruckPanelInput,
+                            routeScheduleType = routeScheduleType,
+                            routeSchedule = finalSchedule,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        onSaveVendor(vendorToSave)
+                        showAddModal = false
+                        editingVendor = null
+                    },
+                    enabled = nameInput.isNotBlank(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Save", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showAddModal = false
+                    editingVendor = null
+                }) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    deletingVendor?.let { vendor ->
+        AlertDialog(
+            onDismissRequest = { deletingVendor = null },
+            title = { Text("Delete Vendor '${vendor.name}'", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error) },
+            text = { Text("Are you sure you want to delete this vendor record?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteVendor(vendor)
+                        deletingVendor = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Delete", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingVendor = null }) { Text("Cancel") }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+}
+
+@Composable
+fun DayRouteRow(
+    dayName: String,
+    isChecked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    routeInput: String,
+    onRouteInputChange: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Checkbox(checked = isChecked, onCheckedChange = onCheckedChange)
+        Text(dayName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(70.dp))
+        if (isChecked) {
+            OutlinedTextField(
+                value = routeInput,
+                onValueChange = onRouteInputChange,
+                placeholder = { Text("Route for $dayName", style = MaterialTheme.typography.bodySmall) },
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f).height(48.dp),
+                singleLine = true
+            )
+        }
     }
 }
 
@@ -1434,10 +2033,9 @@ fun SecurityManagementTab(
     var launchPinEnabled by remember(currentSettings) { mutableStateOf(currentSettings.pinOnAppLaunchEnabled) }
     var settingsPinEnabled by remember(currentSettings) { mutableStateOf(currentSettings.pinOnSettingsOpeningEnabled) }
 
-    var currentPinInput by remember { mutableStateOf("") }
     var newPinInput by remember { mutableStateOf("") }
     var statusMessage by remember { mutableStateOf<String?>(null) }
-    var isError by remember { mutableStateOf(false) }
+    var showPinPromptDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -1455,7 +2053,7 @@ fun SecurityManagementTab(
                 modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("Security Toggles", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("App Launch, Settings PIN & 6-Digit PIN Change", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1504,22 +2102,7 @@ fun SecurityManagementTab(
                 OutlinedTextField(
                     value = newPinInput,
                     onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) newPinInput = it },
-                    label = { Text("New 6-Digit PIN (Leave blank to keep)") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                Text("Security Verification (REQUIRED FOR ANY CHANGE):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-
-                OutlinedTextField(
-                    value = currentPinInput,
-                    onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) currentPinInput = it },
-                    label = { Text("Enter Current 6-Digit Security PIN") },
+                    label = { Text("New 6-Digit PIN (Leave blank to keep current)") },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     shape = RoundedCornerShape(12.dp),
@@ -1531,18 +2114,51 @@ fun SecurityManagementTab(
                     Text(
                         text = it,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
                 Button(
+                    onClick = { showPinPromptDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Save Security Settings", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    if (showPinPromptDialog) {
+        var currentPinInput by remember { mutableStateOf("") }
+        var errorMessage by remember { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { showPinPromptDialog = false },
+            title = { Text("Verify Current Security PIN", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Enter your Current 6-Digit Security PIN to apply these changes:")
+                    OutlinedTextField(
+                        value = currentPinInput,
+                        onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) currentPinInput = it },
+                        label = { Text("Current 6-Digit PIN") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    errorMessage?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
                     onClick = {
-                        val expectedPin = currentSettings.securityPin
-                        if (currentPinInput != expectedPin) {
-                            statusMessage = "Incorrect current 6-Digit Security PIN"
-                            isError = true
-                        } else {
+                        if (currentPinInput == currentSettings.securityPin) {
                             val updatedPin = if (newPinInput.length == 6) newPinInput else currentSettings.securityPin
                             val updated = currentSettings.copy(
                                 pinOnAppLaunchEnabled = launchPinEnabled,
@@ -1552,19 +2168,23 @@ fun SecurityManagementTab(
                             )
                             onUpdateSecuritySettings(updated)
                             statusMessage = "Security settings updated successfully!"
-                            isError = false
-                            currentPinInput = ""
                             newPinInput = ""
+                            showPinPromptDialog = false
+                        } else {
+                            errorMessage = "Incorrect 6-Digit Security PIN"
                         }
                     },
                     enabled = currentPinInput.length == 6,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.align(Alignment.End)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Save", fontWeight = FontWeight.Bold)
+                    Text("Confirm & Save", fontWeight = FontWeight.Bold)
                 }
-            }
-        }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPinPromptDialog = false }) { Text("Cancel") }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 }
 
@@ -1573,9 +2193,17 @@ fun StoreProfileManagementTab(
     securitySettings: SecuritySettingsEntity?,
     onUpdateSecuritySettings: (SecuritySettingsEntity) -> Unit
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val currentSettings = securitySettings ?: SecuritySettingsEntity()
+
     var storeName by remember(currentSettings) { mutableStateOf(currentSettings.storeName) }
-    var ownerName by remember { mutableStateOf("James Lasquite") }
+    var ownerName by remember(currentSettings) { mutableStateOf(currentSettings.storeOwner) }
+    var address by remember(currentSettings) { mutableStateOf(currentSettings.storeAddress) }
+    var contactNumber by remember(currentSettings) { mutableStateOf(currentSettings.storeContactNumber) }
+    var website by remember(currentSettings) { mutableStateOf(currentSettings.storeWebsite) }
+    var socials by remember(currentSettings) { mutableStateOf(currentSettings.storeSocials) }
+
     var saveMessage by remember { mutableStateOf<String?>(null) }
 
     Column(
@@ -1594,7 +2222,7 @@ fun StoreProfileManagementTab(
                 modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("Edit Owner & Store Info", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Edit Store Profile & Business Card", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
                 OutlinedTextField(
                     value = storeName,
@@ -1614,24 +2242,92 @@ fun StoreProfileManagementTab(
                     singleLine = true
                 )
 
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it },
+                    label = { Text("Store Address") },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = contactNumber,
+                    onValueChange = { contactNumber = it },
+                    label = { Text("Contact Number") },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = website,
+                    onValueChange = { website = it },
+                    label = { Text("Website") },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = socials,
+                    onValueChange = { socials = it },
+                    label = { Text("Social / Socials (e.g. FB Page / @handle)") },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
                 saveMessage?.let {
                     Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                 }
 
-                Button(
-                    onClick = {
-                        val updated = currentSettings.copy(
-                            storeName = storeName,
-                            updatedAt = System.currentTimeMillis()
-                        )
-                        onUpdateSecuritySettings(updated)
-                        saveMessage = "Store info updated successfully!"
-                    },
-                    enabled = storeName.isNotBlank(),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.align(Alignment.End)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Save", fontWeight = FontWeight.Bold)
+                    OutlinedButton(
+                        onClick = {
+                            val cardText = buildString {
+                                appendLine("🏪 $storeName")
+                                if (ownerName.isNotBlank()) appendLine("👤 Owner: $ownerName")
+                                if (address.isNotBlank()) appendLine("📍 Address: $address")
+                                if (contactNumber.isNotBlank()) appendLine("📞 Contact: $contactNumber")
+                                if (website.isNotBlank()) appendLine("🌐 Website: $website")
+                                if (socials.isNotBlank()) appendLine("💬 Socials: $socials")
+                            }.trim()
+
+                            clipboardManager.setText(AnnotatedString(cardText))
+                            Toast.makeText(context, "Business Card copied to clipboard!", Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Copy Card", fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            val updated = currentSettings.copy(
+                                storeName = storeName,
+                                storeOwner = ownerName,
+                                storeAddress = address,
+                                storeContactNumber = contactNumber,
+                                storeWebsite = website,
+                                storeSocials = socials,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                            onUpdateSecuritySettings(updated)
+                            saveMessage = "Store info updated successfully!"
+                        },
+                        enabled = storeName.isNotBlank(),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Save Profile", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -1654,7 +2350,7 @@ fun MasterDataManagementTab(
     onDeleteBanRecord: (BanRecordEntity, CashierEntity) -> Unit
 ) {
     var selectedDataTab by remember { mutableIntStateOf(0) }
-    val dataTabs = listOf("Stores", "Categories", "Brands", "Containers", "Wholesale Units")
+    val dataTabs = listOf("Categories", "Brands", "Containers", "Wholesale Units")
 
     Column(modifier = Modifier.fillMaxSize()) {
         ScrollableTabRow(selectedTabIndex = selectedDataTab, edgePadding = 0.dp) {
@@ -1666,11 +2362,10 @@ fun MasterDataManagementTab(
         Spacer(modifier = Modifier.height(12.dp))
 
         when (selectedDataTab) {
-            0 -> SimpleMasterDataSection("Store", stores.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
-            1 -> SimpleMasterDataSection("Category", categories.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
-            2 -> SimpleMasterDataSection("Brand", brands.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
-            3 -> SimpleMasterDataSection("Container", containers.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
-            4 -> SimpleMasterDataSection("WholesaleUnit", wholesaleUnits.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
+            0 -> SimpleMasterDataSection("Category", categories.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
+            1 -> SimpleMasterDataSection("Brand", brands.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
+            2 -> SimpleMasterDataSection("Container", containers.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
+            3 -> SimpleMasterDataSection("WholesaleUnit", wholesaleUnits.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
         }
     }
 }
@@ -1695,7 +2390,7 @@ fun BanRecordsSection(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Add Ban Record", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Add Credit Ban Record", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 OutlinedTextField(value = fullName, onValueChange = { fullName = it }, label = { Text("Full Name") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(value = nickname, onValueChange = { nickname = it }, label = { Text("Alias") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(value = reason, onValueChange = { reason = it }, label = { Text("Reason") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -1733,7 +2428,7 @@ fun BanRecordsSection(
     verifiedCashier?.let {
         CashierVerificationDialog(
             cashiers = cashiers,
-            actionTitle = "Verify Cashier to Add Ban Record",
+            actionTitle = "Verify Cashier to Add Credit Ban Record",
             onDismiss = { verifiedCashier = null },
             onVerified = { cashier ->
                 onSaveBanRecord(BanRecordEntity(fullName = fullName, nickname = nickname, reason = reason, cashierId = cashier.id, cashierName = cashier.name), cashier)
@@ -1818,25 +2513,133 @@ fun AuditLogsTab(auditLogs: List<AuditLogEntity>) {
 }
 
 @Composable
-fun SyncBackupPlaceholder(securitySettings: SecuritySettingsEntity?) {
+fun SyncBackupPlaceholder(
+    securitySettings: SecuritySettingsEntity?,
+    onExportBackupJson: () -> String = { "" },
+    onImportBackupJson: (String) -> Unit = {}
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    var showRestoreDialog by remember { mutableStateOf(false) }
+    var restoreJsonInput by remember { mutableStateOf("") }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("Sync & Local Backup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("Sync & Backup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Google Drive Delta Sync Engine: Active", fontWeight = FontWeight.Bold)
-                Text("Automatic local database pre-sync backups enabled.")
-                Text("Store Name: ${securitySettings?.storeName ?: "Default Store"}")
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Google Drive & Database Survival Backup", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("Automatic local pre-sync backup enabled.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Store Name: ${securitySettings?.storeName ?: "Default Store"}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                statusMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            try {
+                                val jsonStr = onExportBackupJson()
+                                clipboardManager.setText(AnnotatedString(jsonStr))
+
+                                val fileName = "gj_store_backup_${System.currentTimeMillis()}.json"
+                                val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                                val file = java.io.File(downloadsDir, fileName)
+                                java.io.FileOutputStream(file).use { out ->
+                                    out.write(jsonStr.toByteArray())
+                                }
+
+                                statusMessage = "Backup exported! Saved to Downloads: $fileName (and copied to clipboard)"
+                                Toast.makeText(context, "Backup exported and copied to clipboard!", Toast.LENGTH_LONG).show()
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                statusMessage = "Export failed: ${e.message}"
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Export Backup (JSON)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = { showRestoreDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Restore Backup (JSON)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
+    }
+
+    if (showRestoreDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreDialog = false },
+            title = { Text("Restore Database Backup (JSON)", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Paste your backup JSON text below to restore products, prices, vendors, and credits:")
+                    OutlinedTextField(
+                        value = restoreJsonInput,
+                        onValueChange = { restoreJsonInput = it },
+                        placeholder = { Text("Paste JSON backup string here...") },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 120.dp, max = 220.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        try {
+                            if (restoreJsonInput.isNotBlank()) {
+                                onImportBackupJson(restoreJsonInput)
+                                statusMessage = "Database backup restored successfully!"
+                                Toast.makeText(context, "Backup restored successfully!", Toast.LENGTH_LONG).show()
+                                showRestoreDialog = false
+                                restoreJsonInput = ""
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            Toast.makeText(context, "Restore Error: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    enabled = restoreJsonInput.isNotBlank(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Restore Database", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreDialog = false }) { Text("Cancel") }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 }
 
@@ -1858,7 +2661,7 @@ fun AboutAppPlaceholder() {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("About This App", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("About + Update App", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
         Card(
             modifier = Modifier.fillMaxWidth(),

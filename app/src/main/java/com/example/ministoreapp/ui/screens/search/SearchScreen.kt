@@ -2,6 +2,7 @@ package com.example.ministoreapp.ui.screens.search
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -21,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -28,6 +30,25 @@ import androidx.compose.ui.unit.dp
 import com.example.ministoreapp.data.local.entities.ProductEntity
 import com.example.ministoreapp.data.local.entities.RestockItemEntity
 import kotlin.math.roundToInt
+
+data class VariantGroupModel(
+    val key: String,
+    val title: String,
+    val brand: String,
+    val category: String,
+    val storeName: String,
+    val aliases: String,
+    val isBeverage: Boolean,
+    val hasWholesale: Boolean,
+    val priceOptions: List<ProductEntity>
+)
+
+fun extractCleanVariantTitle(name: String): String {
+    return name
+        .replace(Regex("""\s*\(COLD\)""", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("""\s*\(\d+\s*[^)]+\)"""), "")
+        .trim()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,30 +58,58 @@ fun SearchScreen(
     onSearchQueryChange: (String) -> Unit,
     onAddToOrder: (RestockItemEntity) -> Unit
 ) {
-    var selectedProductForQuantity by remember { mutableStateOf<ProductEntity?>(null) }
-    var quantityInput by remember { mutableStateOf("1") }
     var activeCategoryFilter by remember { mutableStateOf("All") }
+    var selectedVariantForRestock by remember { mutableStateOf<VariantGroupModel?>(null) }
 
-    val categories = remember(products) {
-        val list = mutableListOf("All", "Wholesale")
-        val uniqueCats = products.mapNotNull { it.category.ifBlank { null } }.distinct().sorted()
-        list.addAll(uniqueCats)
+    // Group Products by Variant
+    val variantGroups = remember(products) {
+        val map = LinkedHashMap<String, MutableList<ProductEntity>>()
+        for (prod in products) {
+            val cleanTitle = extractCleanVariantTitle(prod.name)
+            val groupKey = "${prod.groupId ?: "nogroup"}_$cleanTitle"
+            map.getOrPut(groupKey) { mutableListOf() }.add(prod)
+        }
+
+        map.map { (key, groupProducts) ->
+            val first = groupProducts.first()
+            val cleanTitle = extractCleanVariantTitle(first.name)
+            val hasWholesale = groupProducts.any { it.variantType == "WHOLESALE" || it.variantType == "COLD_WHOLESALE" }
+            val isBeverage = groupProducts.any { it.isBeverage }
+
+            VariantGroupModel(
+                key = key,
+                title = cleanTitle,
+                brand = first.brand,
+                category = first.category,
+                storeName = first.storeName,
+                aliases = first.aliases,
+                isBeverage = isBeverage,
+                hasWholesale = hasWholesale,
+                priceOptions = groupProducts
+            )
+        }
+    }
+
+    val categories = remember(variantGroups) {
+        val list = mutableListOf("All", "Wholesale", "Beverage")
+        val uniqueCats = variantGroups.mapNotNull { it.category.ifBlank { null } }.distinct().sorted()
+        list.addAll(uniqueCats.filter { !it.equals("Wholesale", ignoreCase = true) && !it.equals("Beverage", ignoreCase = true) })
         list
     }
 
-    val filteredProducts = remember(products, searchQuery, activeCategoryFilter) {
-        products.filter { product ->
+    val filteredVariantGroups = remember(variantGroups, searchQuery, activeCategoryFilter) {
+        variantGroups.filter { group ->
             val matchesSearch = searchQuery.isBlank() ||
-                product.name.contains(searchQuery, ignoreCase = true) ||
-                product.aliases.contains(searchQuery, ignoreCase = true) ||
-                product.category.contains(searchQuery, ignoreCase = true) ||
-                product.brand.contains(searchQuery, ignoreCase = true) ||
-                (searchQuery.equals("Wholesale", ignoreCase = true) && (product.isWholesaleParent || (product.itemsPerWholesalePack ?: 0) > 0))
+                group.title.contains(searchQuery, ignoreCase = true) ||
+                group.aliases.contains(searchQuery, ignoreCase = true) ||
+                group.category.contains(searchQuery, ignoreCase = true) ||
+                group.brand.contains(searchQuery, ignoreCase = true)
 
             val matchesCategory = when (activeCategoryFilter) {
                 "All" -> true
-                "Wholesale" -> product.isWholesaleParent || (product.itemsPerWholesalePack ?: 0) > 0
-                else -> product.category.equals(activeCategoryFilter, ignoreCase = true)
+                "Wholesale" -> group.hasWholesale
+                "Beverage" -> group.isBeverage || group.category.equals("Beverage", ignoreCase = true)
+                else -> group.category.equals(activeCategoryFilter, ignoreCase = true)
             }
 
             matchesSearch && matchesCategory
@@ -97,7 +146,7 @@ fun SearchScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Category Filter Chips
+        // Filter Chips Row (All, Wholesale, Beverage, Categories)
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
@@ -114,7 +163,7 @@ fun SearchScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        if (filteredProducts.isEmpty()) {
+        if (filteredVariantGroups.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -148,114 +197,53 @@ fun SearchScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(filteredProducts, key = { it.id }) { product ->
-                    ProductCard(
-                        product = product,
-                        onAddClick = { selectedProductForQuantity = product }
+                items(filteredVariantGroups, key = { it.key }) { variantGroup ->
+                    VariantSearchCard(
+                        group = variantGroup,
+                        onRestockClick = { selectedVariantForRestock = variantGroup }
                     )
                 }
             }
         }
     }
 
-    // Restock Quantity Dialog
-    selectedProductForQuantity?.let { product ->
-        val fullTitle = buildString {
-            append(product.name)
-            if (product.unitSize.isNotBlank()) append(" ${product.unitSize}")
-            if (product.unit.isNotBlank()) append(" ${product.unit}")
+    // Restock Selection Dialog (Excludes Cold Items)
+    selectedVariantForRestock?.let { variantGroup ->
+        val nonColdOptions = remember(variantGroup) {
+            variantGroup.priceOptions.filter {
+                it.variantType != "COLD_RETAIL" &&
+                    it.variantType != "COLD_WHOLESALE" &&
+                    !it.name.contains("(COLD)", ignoreCase = true)
+            }
         }
 
-        AlertDialog(
-            onDismissRequest = { selectedProductForQuantity = null },
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ShoppingCartCheckout,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            },
-            title = { Text("Add to Restock List", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(text = fullTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(
-                            text = "Selling Price: ₱${product.sellingPrice.roundToInt()}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Cost: ₱${product.cost.roundToInt()}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-
-                    OutlinedTextField(
-                        value = quantityInput,
-                        onValueChange = { if (it.all { char -> char.isDigit() }) quantityInput = it },
-                        label = { Text("Quantity") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val qty = quantityInput.toIntOrNull() ?: 1
-                        val restockItem = RestockItemEntity(
-                            productId = product.id,
-                            productName = fullTitle,
-                            cost = product.cost,
-                            sellingPrice = product.sellingPrice,
-                            quantity = qty,
-                            storeName = product.storeName,
-                            unit = product.unit,
-                            unitSize = product.unitSize
-                        )
-                        onAddToOrder(restockItem)
-                        selectedProductForQuantity = null
-                        quantityInput = "1"
-                    },
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Save", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { selectedProductForQuantity = null }) {
-                    Text("Cancel")
-                }
-            },
-            shape = RoundedCornerShape(24.dp)
+        RestockSelectionModal(
+            variantTitle = variantGroup.title,
+            options = if (nonColdOptions.isNotEmpty()) nonColdOptions else variantGroup.priceOptions,
+            onDismiss = { selectedVariantForRestock = null },
+            onConfirmRestock = { selectedProduct, qty ->
+                val restockItem = RestockItemEntity(
+                    productId = selectedProduct.id,
+                    productName = selectedProduct.name,
+                    cost = selectedProduct.cost,
+                    sellingPrice = selectedProduct.sellingPrice,
+                    quantity = qty,
+                    storeName = selectedProduct.storeName,
+                    unit = selectedProduct.unit,
+                    unitSize = selectedProduct.unitSize
+                )
+                onAddToOrder(restockItem)
+                selectedVariantForRestock = null
+            }
         )
     }
 }
 
 @Composable
-fun ProductCard(
-    product: ProductEntity,
-    onAddClick: () -> Unit
+fun VariantSearchCard(
+    group: VariantGroupModel,
+    onRestockClick: () -> Unit
 ) {
-    val fullTitle = buildString {
-        append(product.name)
-        if (product.unitSize.isNotBlank()) append(" ${product.unitSize}")
-        if (product.unit.isNotBlank()) append(" ${product.unit}")
-    }
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -264,30 +252,52 @@ fun ProductCard(
         ),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(12.dp)
         ) {
-            // Left Side: Price + Add to Restock Button
-            Column(
-                horizontalAlignment = Alignment.Start,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            // Header Row: Title & Restock Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "₱${product.sellingPrice.roundToInt()}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = group.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    if (group.storeName.isNotBlank()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Store,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.secondary
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = group.storeName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 FilledTonalButton(
-                    onClick = onAddClick,
+                    onClick = onRestockClick,
                     shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    modifier = Modifier.height(30.dp)
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
@@ -299,42 +309,186 @@ fun ProductCard(
                 }
             }
 
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Right Side: Name + Unit Size + Unit
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.End
+            // Price Badges Row (Sorted: Cold Retail -> Retail -> Cold Case -> Case)
+            val sortedOptions = remember(group.priceOptions) {
+                group.priceOptions.sortedBy { option ->
+                    when (option.variantType) {
+                        "COLD_RETAIL" -> 1
+                        "RETAIL" -> 2
+                        "COLD_WHOLESALE" -> 3
+                        "WHOLESALE" -> 4
+                        else -> 5
+                    }
+                }
+            }
+
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = fullTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                items(sortedOptions) { option ->
+                    val (badgeIcon, badgeLabel, badgeBgColor) = when (option.variantType) {
+                        "WHOLESALE" -> Triple("📦", "₱${option.sellingPrice.roundToInt()} (${option.unit.ifBlank { "Case" }})", Color(0xFFE8F2EC))
+                        "COLD_WHOLESALE" -> Triple("🧊", "₱${option.sellingPrice.roundToInt()} (Cold Case)", Color(0xFFE3EFE9))
+                        "COLD_RETAIL" -> Triple("❄️", "₱${option.sellingPrice.roundToInt()} (Cold)", Color(0xFFE0F2FE))
+                        else -> Triple("🏷️", "₱${option.sellingPrice.roundToInt()} (${option.unit.ifBlank { "Bottle" }})", Color(0xFFF5F7F6))
+                    }
 
-                if (product.storeName.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Store,
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.secondary
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = product.storeName,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.secondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = badgeBgColor,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(badgeIcon, style = MaterialTheme.typography.labelSmall)
+                            Text(
+                                text = badgeLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+fun RestockSelectionModal(
+    variantTitle: String,
+    options: List<ProductEntity>,
+    onDismiss: () -> Unit,
+    onConfirmRestock: (ProductEntity, Int) -> Unit
+) {
+    var selectedProduct by remember(options) { mutableStateOf(options.firstOrNull()) }
+    var quantityInput by remember { mutableStateOf("1") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ShoppingCartCheckout,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        },
+        title = { Text("Add to Restock List", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = variantTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                if (options.size > 1) {
+                    Text("Select Packaging / Unit:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        options.forEach { option ->
+                            val unitLabel = if (option.isWholesaleParent || option.variantType == "WHOLESALE") {
+                                "${option.unit.ifBlank { "Case" }} (₱${option.sellingPrice.roundToInt()})"
+                            } else {
+                                "${option.unit.ifBlank { "Piece" }} (₱${option.sellingPrice.roundToInt()})"
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (selectedProduct?.id == option.id) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                                        else MaterialTheme.colorScheme.surfaceContainerLow
+                                    )
+                                    .clickable { selectedProduct = option }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selectedProduct?.id == option.id,
+                                    onClick = { selectedProduct = option }
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column {
+                                    Text(
+                                        text = option.name,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Cost: ₱${option.cost.roundToInt()} · Price: ₱${option.sellingPrice.roundToInt()}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else selectedProduct?.let { prod ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Price: ₱${prod.sellingPrice.roundToInt()}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Cost: ₱${prod.cost.roundToInt()}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = quantityInput,
+                    onValueChange = { if (it.all { char -> char.isDigit() }) quantityInput = it },
+                    label = { Text("Quantity") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    selectedProduct?.let { prod ->
+                        val qty = quantityInput.toIntOrNull() ?: 1
+                        onConfirmRestock(prod, qty)
+                    }
+                },
+                enabled = selectedProduct != null,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Save", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        shape = RoundedCornerShape(24.dp)
+    )
 }

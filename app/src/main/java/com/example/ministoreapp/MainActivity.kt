@@ -43,6 +43,24 @@ sealed class TabScreen(val route: String, val title: String, val icon: ImageVect
     object Settings : TabScreen("settings", "Settings", Icons.Default.Settings)
 }
 
+fun formatGroupDisplayTitle(baseName: String, variants: String, unitSize: String = "", containerType: String = ""): String {
+    return buildString {
+        if (baseName.contains("*")) {
+            val variantsList = variants.split(",").map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
+            val cleanBase = baseName.replace("*", "").trim()
+            if (variantsList.isNotBlank()) {
+                append(variantsList)
+                if (cleanBase.isNotBlank()) append(" — ")
+            }
+            append(cleanBase)
+        } else {
+            append(baseName)
+        }
+        if (unitSize.isNotBlank()) append(" $unitSize")
+        if (containerType.isNotBlank()) append(" $containerType")
+    }.ifBlank { baseName }
+}
+
 class MainActivity : ComponentActivity() {
 
     private lateinit var db: AppDatabase
@@ -109,6 +127,7 @@ class MainActivity : ComponentActivity() {
         val banRecords by db.banRecordDao().getAllBanRecordsFlow().collectAsState(initial = emptyList())
         val auditLogs by db.auditLogDao().getAllAuditLogsFlow().collectAsState(initial = emptyList())
         val priceHistory by db.priceHistoryDao().getRecentPriceChangesFlow(System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L).collectAsState(initial = emptyList())
+        val creditTransactions by db.creditTransactionDao().getAllTransactionsFlow().collectAsState(initial = emptyList())
 
         val stores by db.masterDataDao().getStoresFlow().collectAsState(initial = emptyList())
         val categories by db.masterDataDao().getCategoriesFlow().collectAsState(initial = emptyList())
@@ -116,6 +135,7 @@ class MainActivity : ComponentActivity() {
         val units by db.masterDataDao().getUnitsFlow().collectAsState(initial = emptyList())
         val containers by db.masterDataDao().getContainersFlow().collectAsState(initial = emptyList())
         val wholesaleUnits by db.masterDataDao().getWholesaleUnitsFlow().collectAsState(initial = emptyList())
+        val vendors by db.masterDataDao().getVendorsFlow().collectAsState(initial = emptyList())
 
         // App Launch Guard State
         var isAppUnlocked by remember { mutableStateOf(false) }
@@ -127,7 +147,7 @@ class MainActivity : ComponentActivity() {
         // App Launch Security PIN Check
         if (settings.pinOnAppLaunchEnabled && !isAppUnlocked) {
             SecurityPinDialog(
-                title = "G&J Store PIN Protection",
+                title = "Store PIN Protection",
                 expectedPin = settings.securityPin,
                 onDismiss = { finish() },
                 onSuccess = { isAppUnlocked = true }
@@ -138,7 +158,7 @@ class MainActivity : ComponentActivity() {
         // Settings Opening Security PIN Check
         if (showSettingsPinPrompt) {
             SecurityPinDialog(
-                title = "Settings Security PIN Required",
+                title = "Settings Security PIN",
                 expectedPin = settings.securityPin,
                 onDismiss = { showSettingsPinPrompt = false },
                 onSuccess = {
@@ -204,7 +224,8 @@ class MainActivity : ComponentActivity() {
             },
             bottomBar = {
                 NavigationBar(
-                    containerColor = androidx.compose.ui.graphics.Color.White
+                    containerColor = if (isDarkTheme) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.White,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 ) {
                     val items = listOf(TabScreen.Search, TabScreen.Events, TabScreen.Credit, TabScreen.Info, TabScreen.Restock)
                     items.forEach { tab ->
@@ -213,11 +234,11 @@ class MainActivity : ComponentActivity() {
                             label = { Text(tab.title, fontWeight = FontWeight.SemiBold) },
                             selected = currentTab == tab,
                             colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = androidx.compose.ui.graphics.Color(0xFFDCECE2),
-                                selectedIconColor = androidx.compose.ui.graphics.Color(0xFF0B5E38),
-                                selectedTextColor = androidx.compose.ui.graphics.Color(0xFF0B5E38),
-                                unselectedIconColor = androidx.compose.ui.graphics.Color(0xFF526058),
-                                unselectedTextColor = androidx.compose.ui.graphics.Color(0xFF526058)
+                                indicatorColor = if (isDarkTheme) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color(0xFFDCECE2),
+                                selectedIconColor = if (isDarkTheme) MaterialTheme.colorScheme.onPrimaryContainer else androidx.compose.ui.graphics.Color(0xFF0B5E38),
+                                selectedTextColor = if (isDarkTheme) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color(0xFF0B5E38),
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                             ),
                             onClick = {
                                 if (tab == TabScreen.Settings && settings.pinOnSettingsOpeningEnabled) {
@@ -317,13 +338,15 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         },
-                        onAddCredit = { customer, amount, notes, cashier ->
+                        onAddCredit = { customer, amount, notes, borrowedAt, cashier ->
                             lifecycleScope.launch {
                                 val newBalance = customer.balance + amount
                                 db.customerDao().updateBalance(customer.id, newBalance)
                                 db.creditTransactionDao().insertTransaction(
                                     CreditTransactionEntity(
                                         customerId = customer.id,
+                                        timestamp = System.currentTimeMillis(),
+                                        borrowedAt = borrowedAt,
                                         type = "CREDIT_ADD",
                                         totalAmount = amount,
                                         remainingBalance = newBalance,
@@ -349,6 +372,8 @@ class MainActivity : ComponentActivity() {
                                 db.creditTransactionDao().insertTransaction(
                                     CreditTransactionEntity(
                                         customerId = customer.id,
+                                        timestamp = System.currentTimeMillis(),
+                                        borrowedAt = System.currentTimeMillis(),
                                         type = if (newBalance == 0.0) "PAYMENT_FULL" else "PAYMENT_PARTIAL",
                                         totalAmount = amount,
                                         amountTendered = amount,
@@ -377,8 +402,11 @@ class MainActivity : ComponentActivity() {
                         securitySettings = settings,
                         priceHistory = priceHistory,
                         vendorStores = stores,
+                        vendors = vendors,
                         allProducts = products,
                         banRecords = banRecords,
+                        creditTransactions = creditTransactions,
+                        customers = customers,
                         wholesaleProducts = wholesaleProducts
                     )
                     TabScreen.Restock -> RestockScreen(
@@ -415,6 +443,7 @@ class MainActivity : ComponentActivity() {
                         units = units,
                         containers = containers,
                         wholesaleUnits = wholesaleUnits,
+                        vendors = vendors,
                         isDarkTheme = isDarkTheme,
                         onToggleDarkTheme = onToggleDarkTheme,
                         onSaveProductGroup = { group, generatedItems, cashier ->
@@ -430,16 +459,20 @@ class MainActivity : ComponentActivity() {
                                 if (group.category.isNotBlank()) {
                                     db.masterDataDao().insertCategory(com.example.ministoreapp.data.local.entities.CategoryEntity(name = group.category))
                                 }
+                                if (group.storeName.isNotBlank()) {
+                                    db.masterDataDao().insertVendor(com.example.ministoreapp.data.local.entities.VendorEntity(name = group.storeName))
+                                }
                                 if (group.containerType.isNotBlank()) {
                                     db.masterDataDao().insertContainer(com.example.ministoreapp.data.local.entities.ContainerEntity(name = group.containerType))
                                 }
                                 if (group.wholesaleUnit.isNotBlank()) {
                                     db.masterDataDao().insertWholesaleUnit(com.example.ministoreapp.data.local.entities.WholesaleUnitEntity(name = group.wholesaleUnit))
                                 }
+                                val displayTitle = formatGroupDisplayTitle(group.baseName, group.variants, group.unitSize, group.containerType)
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
                                         actionType = "PRODUCT_GROUP_SAVE",
-                                        description = "Saved product group '${group.baseName}' (${generatedItems.size} search items)",
+                                        description = "Saved product group '$displayTitle' (${generatedItems.size} search items)",
                                         cashierId = cashier.id,
                                         cashierName = cashier.name
                                     )
@@ -567,6 +600,189 @@ class MainActivity : ComponentActivity() {
                         onUpdateSecuritySettings = { updatedSettings ->
                             lifecycleScope.launch {
                                 db.securitySettingsDao().insertOrUpdate(updatedSettings)
+                            }
+                        },
+                        onSaveVendor = { vendor ->
+                            lifecycleScope.launch {
+                                db.masterDataDao().insertVendor(vendor)
+                            }
+                        },
+                        onDeleteVendor = { vendor ->
+                            lifecycleScope.launch {
+                                db.masterDataDao().deleteVendor(vendor)
+                            }
+                        },
+                        onExportBackupJson = {
+                            val exportObj = org.json.JSONObject().apply {
+                                put("version", 2)
+                                put("exportedAt", System.currentTimeMillis())
+                                put("storeName", settings.storeName)
+
+                                val groupsArray = org.json.JSONArray()
+                                productGroups.forEach { g ->
+                                    groupsArray.put(org.json.JSONObject().apply {
+                                        put("id", g.id)
+                                        put("baseName", g.baseName)
+                                        put("aliases", g.aliases)
+                                        put("variants", g.variants)
+                                        put("brand", g.brand)
+                                        put("category", g.category)
+                                        put("storeName", g.storeName)
+                                        put("unitSize", g.unitSize)
+                                        put("containerType", g.containerType)
+                                        put("hasWholesale", g.hasWholesale)
+                                        put("wholesaleUnit", g.wholesaleUnit)
+                                        put("wholesaleCost", g.wholesaleCost)
+                                        put("itemsPerPack", g.itemsPerPack)
+                                        put("wholesaleSellingPrice", g.wholesaleSellingPrice)
+                                        put("hasRetail", g.hasRetail)
+                                        put("retailCost", g.retailCost)
+                                        put("retailSellingPrice", g.retailSellingPrice)
+                                        put("bundleQty", g.bundleQty)
+                                        put("bundlePrice", g.bundlePrice)
+                                        put("isBeverage", g.isBeverage)
+                                        put("coldRetailMarkup", g.coldRetailMarkup)
+                                        put("coldCaseMarkup", g.coldCaseMarkup)
+                                    })
+                                }
+                                put("productGroups", groupsArray)
+
+                                val productsArray = org.json.JSONArray()
+                                products.forEach { p ->
+                                    productsArray.put(org.json.JSONObject().apply {
+                                        put("id", p.id)
+                                        put("groupId", p.groupId ?: "")
+                                        put("comboKey", p.comboKey)
+                                        put("name", p.name)
+                                        put("cost", p.cost)
+                                        put("sellingPrice", p.sellingPrice)
+                                        put("variantType", p.variantType ?: "")
+                                    })
+                                }
+                                put("products", productsArray)
+
+                                val vendorsArray = org.json.JSONArray()
+                                vendors.forEach { v ->
+                                    vendorsArray.put(org.json.JSONObject().apply {
+                                        put("id", v.id)
+                                        put("name", v.name)
+                                        put("ownerName", v.ownerName)
+                                        put("productsSold", v.productsSold)
+                                        put("address", v.address)
+                                        put("contactNumber", v.contactNumber)
+                                        put("agentName", v.agentName)
+                                        put("agentContactNumber", v.agentContactNumber)
+                                        put("isTruckPanel", v.isTruckPanel)
+                                        put("routeSchedule", v.routeSchedule)
+                                    })
+                                }
+                                put("vendors", vendorsArray)
+
+                                val customersArray = org.json.JSONArray()
+                                customers.forEach { c ->
+                                    customersArray.put(org.json.JSONObject().apply {
+                                        put("id", c.id)
+                                        put("name", c.name)
+                                        put("nickname", c.nickname)
+                                        put("balance", c.balance)
+                                        put("borrowedAt", c.borrowedAt)
+                                    })
+                                }
+                                put("customers", customersArray)
+                            }
+                            exportObj.toString(2)
+                        },
+                        onImportBackupJson = { jsonStr ->
+                            lifecycleScope.launch {
+                                try {
+                                    val root = org.json.JSONObject(jsonStr)
+
+                                    if (root.has("productGroups")) {
+                                        val arr = root.getJSONArray("productGroups")
+                                        for (i in 0 until arr.length()) {
+                                            val obj = arr.getJSONObject(i)
+                                            val g = com.example.ministoreapp.data.local.entities.ProductGroupEntity(
+                                                id = obj.optString("id", java.util.UUID.randomUUID().toString()),
+                                                baseName = obj.optString("baseName", ""),
+                                                aliases = obj.optString("aliases", ""),
+                                                variants = obj.optString("variants", ""),
+                                                brand = obj.optString("brand", ""),
+                                                category = obj.optString("category", ""),
+                                                storeName = obj.optString("storeName", ""),
+                                                unitSize = obj.optString("unitSize", ""),
+                                                containerType = obj.optString("containerType", ""),
+                                                hasWholesale = obj.optBoolean("hasWholesale", false),
+                                                wholesaleUnit = obj.optString("wholesaleUnit", ""),
+                                                wholesaleCost = obj.optDouble("wholesaleCost", 0.0),
+                                                itemsPerPack = obj.optInt("itemsPerPack", 1),
+                                                wholesaleSellingPrice = obj.optDouble("wholesaleSellingPrice", 0.0),
+                                                hasRetail = obj.optBoolean("hasRetail", true),
+                                                retailCost = obj.optDouble("retailCost", 0.0),
+                                                retailSellingPrice = obj.optDouble("retailSellingPrice", 0.0),
+                                                bundleQty = obj.optInt("bundleQty", 1),
+                                                bundlePrice = obj.optDouble("bundlePrice", 0.0),
+                                                isBeverage = obj.optBoolean("isBeverage", false),
+                                                coldRetailMarkup = obj.optDouble("coldRetailMarkup", 0.0),
+                                                coldCaseMarkup = obj.optDouble("coldCaseMarkup", 0.0)
+                                            )
+                                            db.productGroupDao().insertGroup(g)
+                                        }
+                                    }
+
+                                    if (root.has("products")) {
+                                        val arr = root.getJSONArray("products")
+                                        for (i in 0 until arr.length()) {
+                                            val obj = arr.getJSONObject(i)
+                                            val p = com.example.ministoreapp.data.local.entities.ProductEntity(
+                                                id = obj.optString("id", java.util.UUID.randomUUID().toString()),
+                                                groupId = obj.optString("groupId", "").ifBlank { null },
+                                                comboKey = obj.optString("comboKey", ""),
+                                                name = obj.optString("name", ""),
+                                                cost = obj.optDouble("cost", 0.0),
+                                                sellingPrice = obj.optDouble("sellingPrice", 0.0),
+                                                variantType = obj.optString("variantType", "").ifBlank { null }
+                                            )
+                                            db.productDao().insertProduct(p)
+                                        }
+                                    }
+
+                                    if (root.has("vendors")) {
+                                        val arr = root.getJSONArray("vendors")
+                                        for (i in 0 until arr.length()) {
+                                            val obj = arr.getJSONObject(i)
+                                            val v = com.example.ministoreapp.data.local.entities.VendorEntity(
+                                                id = obj.optString("id", java.util.UUID.randomUUID().toString()),
+                                                name = obj.optString("name", ""),
+                                                ownerName = obj.optString("ownerName", ""),
+                                                productsSold = obj.optString("productsSold", ""),
+                                                address = obj.optString("address", ""),
+                                                contactNumber = obj.optString("contactNumber", ""),
+                                                agentName = obj.optString("agentName", ""),
+                                                agentContactNumber = obj.optString("agentContactNumber", ""),
+                                                isTruckPanel = obj.optBoolean("isTruckPanel", false),
+                                                routeSchedule = obj.optString("routeSchedule", "")
+                                            )
+                                            db.masterDataDao().insertVendor(v)
+                                        }
+                                    }
+
+                                    if (root.has("customers")) {
+                                        val arr = root.getJSONArray("customers")
+                                        for (i in 0 until arr.length()) {
+                                            val obj = arr.getJSONObject(i)
+                                            val c = com.example.ministoreapp.data.local.entities.CustomerEntity(
+                                                id = obj.optString("id", java.util.UUID.randomUUID().toString()),
+                                                name = obj.optString("name", ""),
+                                                nickname = obj.optString("nickname", ""),
+                                                balance = obj.optDouble("balance", 0.0),
+                                                borrowedAt = obj.optLong("borrowedAt", System.currentTimeMillis())
+                                            )
+                                            db.customerDao().insertCustomer(c)
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
                             }
                         }
                     )

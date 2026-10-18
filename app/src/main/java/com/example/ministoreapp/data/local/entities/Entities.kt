@@ -29,6 +29,8 @@ data class ProductGroupEntity(
     val retailMarkupType: String = "FIXED",
     val retailMarkupValue: Double = 0.0,
     val retailSellingPrice: Double = 0.0,
+    val bundleQty: Int = 1, // e.g. 3 pcs for ₱5
+    val bundlePrice: Double = 0.0,
     val isBeverage: Boolean = false,
     val coldRetailMarkup: Double = 0.0,
     val coldCaseMarkup: Double = 0.0,
@@ -78,6 +80,11 @@ data class CashierEntity(
 data class SecuritySettingsEntity(
     @PrimaryKey val id: String = "default",
     val storeName: String = "StoreName Sari-Sari and Wholesale",
+    val storeAddress: String = "",
+    val storeContactNumber: String = "",
+    val storeWebsite: String = "",
+    val storeSocials: String = "",
+    val storeOwner: String = "",
     val securityPin: String = "526375", // 6-digit PIN
     val pinOnAppLaunchEnabled: Boolean = true,
     val pinOnSettingsOpeningEnabled: Boolean = true,
@@ -90,6 +97,8 @@ data class CustomerEntity(
     val name: String,
     val nickname: String = "",
     val balance: Double = 0.0,
+    val borrowedAt: Long = System.currentTimeMillis(),
+    val dueDate: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
@@ -99,6 +108,8 @@ data class CreditTransactionEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val customerId: String,
     val timestamp: Long = System.currentTimeMillis(),
+    val borrowedAt: Long = System.currentTimeMillis(),
+    val dueDate: Long? = null,
     val type: String, // "CREDIT_ADD", "PAYMENT_FULL", "PAYMENT_PARTIAL"
     val totalAmount: Double,
     val amountTendered: Double = 0.0,
@@ -228,6 +239,23 @@ data class ContainerEntity(
 data class WholesaleUnitEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val name: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "vendors")
+data class VendorEntity(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val name: String, // Name / Company Name
+    val ownerName: String = "",
+    val productsSold: String = "",
+    val address: String = "",
+    val contactNumber: String = "",
+    val agentName: String = "",
+    val agentContactNumber: String = "",
+    val isTruckPanel: Boolean = false,
+    val routeScheduleType: String = "DAILY", // "DAILY" or "SPECIFIC_DAYS"
+    val routeSchedule: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

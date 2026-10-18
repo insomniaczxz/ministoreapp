@@ -33,6 +33,7 @@ import com.example.ministoreapp.data.local.entities.ProductGroupEntity
 import com.example.ministoreapp.data.local.entities.SecuritySettingsEntity
 import com.example.ministoreapp.data.local.entities.StoreEntity
 import com.example.ministoreapp.data.local.entities.UnitEntity
+import com.example.ministoreapp.data.local.entities.VendorEntity
 import com.example.ministoreapp.data.local.entities.WholesaleUnitEntity
 import java.io.File
 import java.io.FileInputStream
@@ -57,9 +58,10 @@ import java.util.concurrent.Executors
         BrandEntity::class,
         UnitEntity::class,
         ContainerEntity::class,
-        WholesaleUnitEntity::class
+        WholesaleUnitEntity::class,
+        VendorEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

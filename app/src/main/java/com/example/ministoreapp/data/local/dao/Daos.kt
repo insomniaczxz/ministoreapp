@@ -22,6 +22,7 @@ import com.example.ministoreapp.data.local.entities.ProductGroupEntity
 import com.example.ministoreapp.data.local.entities.SecuritySettingsEntity
 import com.example.ministoreapp.data.local.entities.StoreEntity
 import com.example.ministoreapp.data.local.entities.UnitEntity
+import com.example.ministoreapp.data.local.entities.VendorEntity
 import com.example.ministoreapp.data.local.entities.WholesaleUnitEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -163,6 +164,9 @@ interface CustomerDao {
 interface CreditTransactionDao {
     @Query("SELECT * FROM credit_transactions WHERE customerId = :customerId ORDER BY timestamp DESC")
     fun getTransactionsForCustomerFlow(customerId: String): Flow<List<CreditTransactionEntity>>
+
+    @Query("SELECT * FROM credit_transactions ORDER BY timestamp DESC")
+    fun getAllTransactionsFlow(): Flow<List<CreditTransactionEntity>>
 
     @Query("SELECT * FROM credit_transactions ORDER BY timestamp DESC")
     suspend fun getAllTransactions(): List<CreditTransactionEntity>
@@ -321,4 +325,13 @@ interface MasterDataDao {
     suspend fun insertWholesaleUnit(wholesaleUnit: WholesaleUnitEntity)
     @Delete
     suspend fun deleteWholesaleUnit(wholesaleUnit: WholesaleUnitEntity)
+
+    @Query("SELECT * FROM vendors ORDER BY name ASC")
+    fun getVendorsFlow(): Flow<List<VendorEntity>>
+    @Query("SELECT * FROM vendors ORDER BY name ASC")
+    suspend fun getVendors(): List<VendorEntity>
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertVendor(vendor: VendorEntity)
+    @Delete
+    suspend fun deleteVendor(vendor: VendorEntity)
 }
