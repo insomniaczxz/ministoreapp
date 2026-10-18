@@ -169,6 +169,33 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val activity = (context as? android.app.Activity)
+        var lastBackPressTime by remember { mutableLongStateOf(0L) }
+
+        androidx.activity.compose.BackHandler(enabled = true) {
+            when {
+                // 1. If in sub-settings view (Products, Vendors, Cashiers, etc.), go back to main Settings menu
+                activeSettingsDetailView != null -> {
+                    activeSettingsDetailView = null
+                }
+                // 2. If in Settings or another bottom tab, switch back to Search tab
+                currentTab != TabScreen.Search -> {
+                    currentTab = TabScreen.Search
+                }
+                // 3. Already on Main Search screen -> "Press back again to exit"
+                else -> {
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastBackPressTime < 2000) {
+                        activity?.finish()
+                    } else {
+                        lastBackPressTime = currentTime
+                        Toast.makeText(context, "Press back again to exit", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
         val headerTitle = when {
             currentTab == TabScreen.Settings && activeSettingsDetailView != null ->
                 com.example.ministoreapp.ui.screens.settings.getDetailTitle(activeSettingsDetailView)

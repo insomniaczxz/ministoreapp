@@ -297,6 +297,10 @@ fun VariantSearchCard(
                     onClick = onRestockClick,
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
                     modifier = Modifier.height(32.dp)
                 ) {
                     Icon(
@@ -330,17 +334,17 @@ fun VariantSearchCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 items(sortedOptions) { option ->
-                    val (badgeIcon, badgeLabel, badgeBgColor) = when (option.variantType) {
-                        "WHOLESALE" -> Triple("📦", "₱${option.sellingPrice.roundToInt()} (${option.unit.ifBlank { "Case" }})", Color(0xFFE8F2EC))
-                        "COLD_WHOLESALE" -> Triple("🧊", "₱${option.sellingPrice.roundToInt()} (Cold Case)", Color(0xFFE3EFE9))
-                        "COLD_RETAIL" -> Triple("❄️", "₱${option.sellingPrice.roundToInt()} (Cold)", Color(0xFFE0F2FE))
-                        else -> Triple("🏷️", "₱${option.sellingPrice.roundToInt()} (${option.unit.ifBlank { "Bottle" }})", Color(0xFFF5F7F6))
+                    val (badgeIcon, badgeLabel) = when (option.variantType) {
+                        "WHOLESALE" -> Pair("📦", "₱${option.sellingPrice.roundToInt()} (${option.unit.ifBlank { "Case" }})")
+                        "COLD_WHOLESALE" -> Pair("🧊", "₱${option.sellingPrice.roundToInt()} (Cold Case)")
+                        "COLD_RETAIL" -> Pair("❄️", "₱${option.sellingPrice.roundToInt()} (Cold)")
+                        else -> Pair("🏷️", "₱${option.sellingPrice.roundToInt()} (${option.unit.ifBlank { "Bottle" }})")
                     }
 
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = badgeBgColor,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),

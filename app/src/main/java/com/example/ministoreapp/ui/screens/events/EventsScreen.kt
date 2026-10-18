@@ -70,7 +70,7 @@ fun EventsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF5F7F6))
+            .background(MaterialTheme.colorScheme.background)
             .padding(12.dp)
     ) {
         // Top 3 Stat Cards Row
@@ -81,21 +81,21 @@ fun EventsScreen(
             Card(
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(1.dp, Color(0xFFE2E6E4))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column(modifier = Modifier.padding(10.dp)) {
                     Text(
                         text = "$eventsTodayCount",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1B1D1C)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "Events today",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF6B726E),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -105,15 +105,15 @@ fun EventsScreen(
             Card(
                 modifier = Modifier.weight(1.2f),
                 shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(1.dp, Color(0xFFE2E6E4))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column(modifier = Modifier.padding(10.dp)) {
                     Text(
                         text = "₱${amountTodayTotal.roundToInt()}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1B1D1C),
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -121,7 +121,7 @@ fun EventsScreen(
                     Text(
                         text = "Amount today",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF6B726E),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -131,21 +131,21 @@ fun EventsScreen(
             Card(
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(1.dp, Color(0xFFE2E6E4))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column(modifier = Modifier.padding(10.dp)) {
                     Text(
                         text = "$pendingSettleCount",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1B1D1C)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "Pending settle",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF6B726E),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -166,8 +166,8 @@ fun EventsScreen(
                             showCreateModal = true
                         },
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.dp, Color(0xFFE2E6E4))
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
@@ -177,13 +177,13 @@ fun EventsScreen(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFF5ECE0)),
+                                .background(MaterialTheme.colorScheme.tertiaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ShoppingCart,
                                 contentDescription = null,
-                                tint = Color(0xFF8C581E),
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -192,7 +192,7 @@ fun EventsScreen(
                             text = "Buy (purchase)",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B1D1C),
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -207,8 +207,8 @@ fun EventsScreen(
                             showCreateModal = true
                         },
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.dp, Color(0xFFE2E6E4))
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
@@ -218,13 +218,13 @@ fun EventsScreen(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFE3EFE9)),
+                                .background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Paid,
                                 contentDescription = null,
-                                tint = Color(0xFF0B5E38),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -233,7 +233,7 @@ fun EventsScreen(
                             text = "Fund in / out",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B1D1C),
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -248,9 +248,9 @@ fun EventsScreen(
                         .clickable { filterPendingOnly = !filterPendingOnly },
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (filterPendingOnly) Color(0xFFE3EFE9) else Color.White
+                        containerColor = if (filterPendingOnly) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
                     ),
-                    border = BorderStroke(1.dp, if (filterPendingOnly) Color(0xFF0B5E38) else Color(0xFFE2E6E4))
+                    border = BorderStroke(1.dp, if (filterPendingOnly) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
@@ -260,13 +260,13 @@ fun EventsScreen(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFE6F0EC)),
+                                .background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = null,
-                                tint = Color(0xFF0B5E38),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -275,7 +275,7 @@ fun EventsScreen(
                             text = "Settle a transfer",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B1D1C),
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -290,8 +290,8 @@ fun EventsScreen(
                             showCreateModal = true
                         },
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.dp, Color(0xFFE2E6E4))
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
@@ -301,13 +301,13 @@ fun EventsScreen(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFE8F2EC)),
+                                .background(MaterialTheme.colorScheme.secondaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Description,
                                 contentDescription = null,
-                                tint = Color(0xFF0B5E38),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -316,7 +316,7 @@ fun EventsScreen(
                             text = "Store info note",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B1D1C),
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -336,7 +336,7 @@ fun EventsScreen(
                 Text(
                     text = if (filterPendingOnly) "No pending settlements." else "No events logged.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF6B726E)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         } else {
@@ -454,10 +454,10 @@ fun EventCardItem(
     val dateFormat = SimpleDateFormat("dd MMM yyyy · h:mm a", Locale.getDefault())
 
     val (bgCircleColor, iconColor, iconVector) = when (event.type) {
-        "BUY" -> Triple(Color(0xFFF5ECE0), Color(0xFF8C581E), Icons.Default.ShoppingCart)
-        "FUND_TRANSFER" -> Triple(Color(0xFFE3EFE9), Color(0xFF0B5E38), Icons.Default.Paid)
-        "TASK" -> Triple(Color(0xFFE8F2EC), Color(0xFF0B5E38), Icons.Default.Description)
-        else -> Triple(Color(0xFFEBF1EE), Color(0xFF334A3E), Icons.Default.Description)
+        "BUY" -> Triple(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer, Icons.Default.ShoppingCart)
+        "FUND_TRANSFER" -> Triple(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, Icons.Default.Paid)
+        "TASK" -> Triple(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, Icons.Default.Description)
+        else -> Triple(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.onSurface, Icons.Default.Description)
     }
 
     val displayTypeTitle = when (event.type) {
@@ -470,8 +470,8 @@ fun EventCardItem(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Color(0xFFE2E6E4))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -503,7 +503,7 @@ fun EventCardItem(
                         text = displayTypeTitle,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF526058),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -514,7 +514,7 @@ fun EventCardItem(
                         text = "₱${event.total.roundToInt()}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1B1D1C)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -525,7 +525,7 @@ fun EventCardItem(
                     text = event.description,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1B1D1C)
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
@@ -534,7 +534,7 @@ fun EventCardItem(
                 Text(
                     text = event.details,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF6B726E)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
@@ -548,7 +548,7 @@ fun EventCardItem(
                 Text(
                     text = "${dateFormat.format(Date(event.timestamp))} · ${event.cashierName}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF8A938E)
+                    color = MaterialTheme.colorScheme.outline
                 )
 
                 IconButton(
@@ -558,7 +558,7 @@ fun EventCardItem(
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Delete",
-                        tint = Color(0xFF8A938E),
+                        tint = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -571,8 +571,8 @@ fun EventCardItem(
                         .fillMaxWidth()
                         .clickable(enabled = !event.isSettled, onClick = onSettleClick),
                     shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFCFB)),
-                    border = BorderStroke(1.dp, Color(0xFFE2E6E4))
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Row(
                         modifier = Modifier.padding(10.dp),
@@ -593,7 +593,7 @@ fun EventCardItem(
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1B1D1C)
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 text = if (event.isSettled) {
@@ -602,7 +602,7 @@ fun EventCardItem(
                                     "Requires cashier verification"
                                 },
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF6B726E)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }

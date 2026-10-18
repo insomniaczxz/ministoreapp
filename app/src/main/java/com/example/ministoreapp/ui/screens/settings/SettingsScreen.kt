@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalOffer
@@ -497,7 +498,7 @@ fun ProductsManagementTab(
             Button(
                 onClick = { showAddProductDialog = true },
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B5E38)),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                 modifier = Modifier.height(50.dp)
             ) {
@@ -1009,7 +1010,7 @@ fun AddProductDialog(
     // Block 3: Retail / Per Piece (Retail Fixed Markup Removed) & Tingi Bundle Pricing
     var hasRetail by remember { mutableStateOf(existingGroup?.hasRetail ?: true) }
     var retailCostInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.retailCost > 0) existingGroup.retailCost.roundToInt().toString() else "") }
-    var retailManualPriceInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.retailSellingPrice > 0) existingGroup.retailSellingPrice.roundToInt().toString() else "") }
+    var retailMarkupInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.retailMarkupValue > 0) existingGroup.retailMarkupValue.roundToInt().toString() else "") }
 
     var hasBundle by remember { mutableStateOf(existingGroup?.bundlePrice != null && existingGroup.bundlePrice > 0) }
     var bundleQtyInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.bundleQty > 1) existingGroup.bundleQty.toString() else "3") }
@@ -1038,7 +1039,7 @@ fun AddProductDialog(
         retailCostInput.toDoubleOrNull() ?: 0.0
     }
 
-    // Wholesale Selling Price Calculation Fix (Wholesale Cost + Fixed Markup)
+    // Wholesale Selling Price Calculation (Auto-pricing or Wholesale Cost + Wholesale Fixed Markup)
     val wholesaleSellingPrice = remember(wholesaleCost, wholesaleMarkupInput, wholesaleManualPriceInput) {
         val manualVal = wholesaleManualPriceInput.toDoubleOrNull()
         val markupVal = wholesaleMarkupInput.toDoubleOrNull() ?: 0.0
@@ -1055,10 +1056,18 @@ fun AddProductDialog(
         }
     }
 
-    val retailSellingPrice = remember(computedRetailCost, retailManualPriceInput) {
-        val manualVal = retailManualPriceInput.toDoubleOrNull()
-        if (manualVal != null && manualVal > 0) manualVal
-        else PricingEngine.calculateSellingPrice(computedRetailCost, "FIXED", 0.0, null)
+    // Retail Selling Price Calculation (Auto-pricing or Computed Retail Cost + Retail Fixed Markup)
+    val retailSellingPrice = remember(computedRetailCost, retailMarkupInput) {
+        val markupVal = retailMarkupInput.toDoubleOrNull() ?: 0.0
+        if (computedRetailCost > 0) {
+            if (markupVal > 0) {
+                computedRetailCost + markupVal
+            } else {
+                PricingEngine.calculateSellingPrice(computedRetailCost, "FIXED", 0.0, null)
+            }
+        } else {
+            0.0
+        }
     }
 
     val coldRetailPrice = remember(retailSellingPrice, coldRetailMarkupInput) {
@@ -1237,7 +1246,6 @@ fun AddProductDialog(
                                     OutlinedTextField(value = itemsPerPackInput, onValueChange = { itemsPerPackInput = it }, label = { Text("Pcs per Pack") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f), singleLine = true)
                                 }
                                 OutlinedTextField(value = wholesaleMarkupInput, onValueChange = { wholesaleMarkupInput = it }, label = { Text("Wholesale Fixed Markup (+₱)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
-                                OutlinedTextField(value = wholesaleManualPriceInput, onValueChange = { wholesaleManualPriceInput = it }, label = { Text("Wholesale Price Override (₱)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
                                 Text("Calculated Wholesale Price: ₱${wholesaleSellingPrice.roundToInt()}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1263,7 +1271,7 @@ fun AddProductDialog(
                                 if (!hasWholesale) {
                                     OutlinedTextField(value = retailCostInput, onValueChange = { retailCostInput = it }, label = { Text("Cost per Piece (₱)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
                                 }
-                                OutlinedTextField(value = retailManualPriceInput, onValueChange = { retailManualPriceInput = it }, label = { Text("Retail Price Override (₱)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                                OutlinedTextField(value = retailMarkupInput, onValueChange = { retailMarkupInput = it }, label = { Text("Retail Fixed Markup (+₱)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth(), singleLine = true)
                                 Text("Calculated Retail Price: ₱${retailSellingPrice.roundToInt()}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1375,7 +1383,8 @@ fun AddProductDialog(
                         onClick = { pendingSaveMode = "SAVE" },
                         enabled = baseName.isNotBlank() && previewItems.any { it.isCheckedState.value },
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
                     ) {
                         Text("Save", fontWeight = FontWeight.Bold)
                     }
@@ -1433,7 +1442,7 @@ fun AddProductDialog(
                     hasRetail = hasRetail,
                     retailCost = computedRetailCost,
                     retailMarkupType = "FIXED",
-                    retailMarkupValue = 0.0,
+                    retailMarkupValue = retailMarkupInput.toDoubleOrNull() ?: 0.0,
                     retailSellingPrice = retailSellingPrice,
                     bundleQty = if (hasBundle) bundleQtyInput.toIntOrNull() ?: 1 else 1,
                     bundlePrice = if (hasBundle) bundlePriceInput.toDoubleOrNull() ?: 0.0 else 0.0,
@@ -1476,7 +1485,7 @@ fun AddProductDialog(
                     wholesaleCostInput = ""
                     retailCostInput = ""
                     wholesaleManualPriceInput = ""
-                    retailManualPriceInput = ""
+                    retailMarkupInput = ""
                     pendingSaveMode = null
                 } else {
                     pendingSaveMode = null
@@ -1515,7 +1524,7 @@ fun VendorsManagementTab(
             Button(
                 onClick = { showAddModal = true },
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B5E38))
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
@@ -2524,6 +2533,28 @@ fun SyncBackupPlaceholder(
     var restoreJsonInput by remember { mutableStateOf("") }
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
+    val filePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val jsonText = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
+                if (jsonText.isNotBlank()) {
+                    onImportBackupJson(jsonText)
+                    statusMessage = "Database backup restored successfully from file!"
+                    Toast.makeText(context, "Backup restored from file successfully!", Toast.LENGTH_LONG).show()
+                    showRestoreDialog = false
+                } else {
+                    Toast.makeText(context, "Selected backup file is empty.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Toast.makeText(context, "Restore Error: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -2601,7 +2632,19 @@ fun SyncBackupPlaceholder(
             title = { Text("Restore Database Backup (JSON)", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Paste your backup JSON text below to restore products, prices, vendors, and credits:")
+                    FilledTonalButton(
+                        onClick = { filePickerLauncher.launch("*/*") },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Open Downloads / Select File (*.json)", fontWeight = FontWeight.Bold)
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+
+                    Text("Or paste your backup JSON text below:", style = MaterialTheme.typography.labelMedium)
                     OutlinedTextField(
                         value = restoreJsonInput,
                         onValueChange = { restoreJsonInput = it },
@@ -2609,7 +2652,7 @@ fun SyncBackupPlaceholder(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 120.dp, max = 220.dp)
+                            .heightIn(min = 100.dp, max = 200.dp)
                     )
                 }
             },
