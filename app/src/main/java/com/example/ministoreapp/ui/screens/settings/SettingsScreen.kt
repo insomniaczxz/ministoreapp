@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
@@ -104,6 +105,7 @@ fun SettingsScreen(
     onDeleteVendor: (VendorEntity) -> Unit = {},
     onExportBackupJson: () -> String = { "" },
     onImportBackupJson: (String) -> Unit = {},
+    onSwitchGoogleAccount: () -> Unit = {},
     onUpdateSecuritySettings: (SecuritySettingsEntity) -> Unit
 ) {
     val currentSettings = securitySettings ?: SecuritySettingsEntity()
@@ -166,7 +168,7 @@ fun SettingsScreen(
                         onUpdateSecuritySettings = onUpdateSecuritySettings
                     )
                     "BAN_LIST" -> BanRecordsSection(banRecords, cashiers, onSaveBanRecord, onDeleteBanRecord)
-                    "SYNC" -> SyncBackupPlaceholder(securitySettings, onExportBackupJson, onImportBackupJson)
+                    "SYNC" -> SyncBackupPlaceholder(securitySettings, onExportBackupJson, onImportBackupJson, onSwitchGoogleAccount)
                     "AUDIT_LOGS" -> AuditLogsTab(auditLogs = auditLogs)
                     "STORE_PROFILE" -> StoreProfileManagementTab(
                         securitySettings = securitySettings,
@@ -1410,8 +1412,11 @@ fun AddProductDialog(
             shape = RoundedCornerShape(24.dp)
         )
     } else {
+        val effectiveCashiers = remember(cashiers) {
+            if (cashiers.isEmpty()) listOf(CashierEntity(id = "default_owner", name = "Store Owner", pin = "0000")) else cashiers
+        }
         CashierVerificationDialog(
-            cashiers = cashiers,
+            cashiers = effectiveCashiers,
             actionTitle = if (pendingSaveMode == "DIFF_SIZE") "Verify Cashier (Current Form Saved, Proceeding to Diff. Size)" else "Verify Cashier to Save Product Group",
             onDismiss = { pendingSaveMode = null },
             onVerified = { cashier ->
@@ -2525,10 +2530,23 @@ fun AuditLogsTab(auditLogs: List<AuditLogEntity>) {
 fun SyncBackupPlaceholder(
     securitySettings: SecuritySettingsEntity?,
     onExportBackupJson: () -> String = { "" },
-    onImportBackupJson: (String) -> Unit = {}
+    onImportBackupJson: (String) -> Unit = {},
+    onSwitchGoogleAccount: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    val prefs = remember { context.getSharedPreferences("ministore_prefs", android.content.Context.MODE_PRIVATE) }
+
+    var googleAccountEmail by remember { mutableStateOf(prefs.getString("google_account_email", null) ?: "Not linked") }
+
+    // Sync Preferences State
+    var syncSettingsEnabled by remember { mutableStateOf(prefs.getBoolean("sync_settings_enabled", true)) }
+    var syncRequirePin by remember { mutableStateOf(prefs.getBoolean("sync_require_pin", false)) }
+    var syncProductsEnabled by remember { mutableStateOf(prefs.getBoolean("sync_products_enabled", true)) }
+    var syncCreditEnabled by remember { mutableStateOf(prefs.getBoolean("sync_credit_enabled", true)) }
+    var syncEventsEnabled by remember { mutableStateOf(prefs.getBoolean("sync_events_enabled", true)) }
+    var syncRestockEnabled by remember { mutableStateOf(prefs.getBoolean("sync_restock_enabled", true)) }
+
     var showRestoreDialog by remember { mutableStateOf(false) }
     var restoreJsonInput by remember { mutableStateOf("") }
     var statusMessage by remember { mutableStateOf<String?>(null) }
@@ -2561,8 +2579,9 @@ fun SyncBackupPlaceholder(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("Sync & Backup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("Sync & Backup Options", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
+        // Card 1: Google Account Link
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
@@ -2570,11 +2589,74 @@ fun SyncBackupPlaceholder(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Google Drive & Database Survival Backup", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Text("Automatic local pre-sync backup enabled.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Store Name: ${securitySettings?.storeName ?: "Default Store"}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                Text("Google Account Sync", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("Linked Account: $googleAccountEmail", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                Button(
+                    onClick = onSwitchGoogleAccount,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Cloud, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Switch / Replace Google Account", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // Card 2: Sync Toggles
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Cloud Sync Preferences", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+
+                SyncSwitchRow("Sync Settings & PIN Security", syncSettingsEnabled) {
+                    syncSettingsEnabled = it
+                    prefs.edit().putBoolean("sync_settings_enabled", it).apply()
+                }
+
+                SyncSwitchRow("Require PIN to Execute Cloud Sync", syncRequirePin) {
+                    syncRequirePin = it
+                    prefs.edit().putBoolean("sync_require_pin", it).apply()
+                }
+
+                SyncSwitchRow("Sync Products & Recipe Calculator", syncProductsEnabled) {
+                    syncProductsEnabled = it
+                    prefs.edit().putBoolean("sync_products_enabled", it).apply()
+                }
+
+                SyncSwitchRow("Sync Customer Credit & Debt Records", syncCreditEnabled) {
+                    syncCreditEnabled = it
+                    prefs.edit().putBoolean("sync_credit_enabled", it).apply()
+                }
+
+                SyncSwitchRow("Sync Events & Store Notes", syncEventsEnabled) {
+                    syncEventsEnabled = it
+                    prefs.edit().putBoolean("sync_events_enabled", it).apply()
+                }
+
+                SyncSwitchRow("Sync Restock & Order Items", syncRestockEnabled) {
+                    syncRestockEnabled = it
+                    prefs.edit().putBoolean("sync_restock_enabled", it).apply()
+                }
+            }
+        }
+
+        // Card 3: Local Backup (Clipboard & File Chooser preserved!)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Local Database Backup & Restore", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("Export backup JSON to Downloads folder/clipboard, or restore from a JSON file/clipboard text.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 statusMessage?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -2597,14 +2679,15 @@ fun SyncBackupPlaceholder(
                                     out.write(jsonStr.toByteArray())
                                 }
 
-                                statusMessage = "Backup exported! Saved to Downloads: $fileName (and copied to clipboard)"
-                                Toast.makeText(context, "Backup exported and copied to clipboard!", Toast.LENGTH_LONG).show()
+                                statusMessage = "Exported! Saved to Downloads: $fileName (and copied to clipboard)"
+                                Toast.makeText(context, "Backup exported & copied to clipboard!", Toast.LENGTH_LONG).show()
                             } catch (e: Exception) {
                                 e.printStackTrace()
                                 statusMessage = "Export failed: ${e.message}"
                             }
                         },
                         shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -2683,6 +2766,18 @@ fun SyncBackupPlaceholder(
             },
             shape = RoundedCornerShape(24.dp)
         )
+    }
+}
+
+@Composable
+fun SyncSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -2803,41 +2898,52 @@ fun AboutAppPlaceholder() {
                 }
             },
             confirmButton = {
-                if (info.hasUpdate && !info.downloadUrl.isNullOrBlank()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val targetUrl = info.downloadUrl ?: "https://github.com/insomniaczxz/ministoreapp/releases"
                     Button(
                         onClick = {
-                            isDownloading = true
-                            coroutineScope.launch {
-                                val downloadResult = AppUpdateManager.downloadAndInstallApk(
-                                    context = context,
-                                    downloadUrl = info.downloadUrl,
-                                    onProgress = { downloadProgress = it }
-                                )
-                                isDownloading = false
-                                if (downloadResult.isFailure) {
-                                    statusDialogMessage = "Download Failed: ${downloadResult.exceptionOrNull()?.message}"
+                            if (!info.downloadUrl.isNullOrBlank()) {
+                                isDownloading = true
+                                coroutineScope.launch {
+                                    val downloadResult = AppUpdateManager.downloadAndInstallApk(
+                                        context = context,
+                                        downloadUrl = info.downloadUrl,
+                                        onProgress = { downloadProgress = it }
+                                    )
+                                    isDownloading = false
+                                    if (downloadResult.isFailure) {
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl))
+                                        context.startActivity(intent)
+                                    } else {
+                                        releaseInfo = null
+                                    }
                                 }
+                            } else {
+                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl))
+                                context.startActivity(intent)
                                 releaseInfo = null
                             }
                         },
                         enabled = !isDownloading,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(if (isDownloading) "Downloading..." else "Download & Install Update", fontWeight = FontWeight.Bold)
+                        Text(if (isDownloading) "Downloading APK... $downloadProgress%" else "Download & Install Update", fontWeight = FontWeight.Bold)
                     }
-                } else {
-                    Button(onClick = { releaseInfo = null }, shape = RoundedCornerShape(12.dp)) {
-                        Text("OK", fontWeight = FontWeight.Bold)
-                    }
-                }
-            },
-            dismissButton = {
-                if (info.hasUpdate) {
-                    TextButton(onClick = { releaseInfo = null }) {
-                        Text("Later")
+
+                    OutlinedButton(
+                        onClick = { releaseInfo = null },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Close", fontWeight = FontWeight.Bold)
                     }
                 }
             },
+            dismissButton = null,
             shape = RoundedCornerShape(24.dp)
         )
     }

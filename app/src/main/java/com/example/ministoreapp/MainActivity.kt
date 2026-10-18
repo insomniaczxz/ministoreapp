@@ -22,6 +22,7 @@ import com.example.ministoreapp.data.local.AppDatabase
 import com.example.ministoreapp.data.local.entities.AuditLogEntity
 import com.example.ministoreapp.data.local.entities.CreditTransactionEntity
 import com.example.ministoreapp.data.local.entities.PriceHistoryEntity
+import com.example.ministoreapp.data.local.entities.RestockItemEntity
 import com.example.ministoreapp.data.local.entities.SecuritySettingsEntity
 import com.example.ministoreapp.data.repository.SyncRepository
 import com.example.ministoreapp.ui.components.GlobalHeader
@@ -32,18 +33,22 @@ import com.example.ministoreapp.ui.screens.info.InfoScreen
 import com.example.ministoreapp.ui.screens.restock.RestockScreen
 import com.example.ministoreapp.ui.screens.search.SearchScreen
 import com.example.ministoreapp.ui.screens.settings.SettingsScreen
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 sealed class TabScreen(val route: String, val title: String, val icon: ImageVector) {
     object Search : TabScreen("search", "Search", Icons.Default.Search)
     object Events : TabScreen("events", "Events", Icons.AutoMirrored.Filled.EventNote)
     object Credit : TabScreen("credit", "Credit", Icons.Default.Payment)
-    object Info : TabScreen("info", "Info", Icons.Default.Info)
     object Restock : TabScreen("restock", "Restock", Icons.Default.Inventory2)
+    object Info : TabScreen("info", "Info", Icons.Default.Info)
     object Settings : TabScreen("settings", "Settings", Icons.Default.Settings)
 }
 
-fun formatGroupDisplayTitle(baseName: String, variants: String, unitSize: String = "", containerType: String = ""): String {
+fun formatGroupDisplayTitle(baseName: String, variants: String, unitSize: String, containerType: String): String {
     return buildString {
         if (baseName.contains("*")) {
             val variantsList = variants.split(",").map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
@@ -113,13 +118,12 @@ class MainActivity : ComponentActivity() {
         onToggleDarkTheme: (Boolean) -> Unit
     ) {
         var currentTab by remember { mutableStateOf<TabScreen>(TabScreen.Search) }
+        var searchQuery by remember { mutableStateOf("") }
 
         // Live States from Database Flows
         val securitySettings by db.securitySettingsDao().getSettingsFlow().collectAsState(initial = null)
         val productGroups by db.productGroupDao().getAllGroupsFlow().collectAsState(initial = emptyList())
         val products by db.productDao().getAllProductsFlow().collectAsState(initial = emptyList())
-        val searchProducts by db.productDao().getSearchProductsFlow("").collectAsState(initial = emptyList())
-        val wholesaleProducts by db.productDao().getWholesaleProductsFlow().collectAsState(initial = emptyList())
         val cashiers by db.cashierDao().getAllCashiersFlow().collectAsState(initial = emptyList())
         val customers by db.customerDao().getAllCustomersFlow().collectAsState(initial = emptyList())
         val events by db.eventDao().getAllEventsFlow().collectAsState(initial = emptyList())
@@ -137,12 +141,77 @@ class MainActivity : ComponentActivity() {
         val wholesaleUnits by db.masterDataDao().getWholesaleUnitsFlow().collectAsState(initial = emptyList())
         val vendors by db.masterDataDao().getVendorsFlow().collectAsState(initial = emptyList())
 
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val prefs = remember { context.getSharedPreferences("ministore_prefs", android.content.Context.MODE_PRIVATE) }
+        var isOnboardingComplete by remember { mutableStateOf(prefs.getBoolean("is_onboarding_complete", false)) }
+
+        val settings = securitySettings ?: SecuritySettingsEntity()
+
+        val gso = remember {
+            GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .requestProfile()
+                .build()
+        }
+        val googleSignInClient = remember(context) {
+            GoogleSignIn.getClient(context, gso)
+        }
+
+        var pendingGoogleSignInCallback by remember { mutableStateOf<((String?) -> Unit)?>(null) }
+
+        val googleSignInLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            try {
+                val account = task.getResult(ApiException::class.java)
+                if (account != null) {
+                    val email = account.email ?: account.displayName ?: "Google User"
+                    prefs.edit().putString("google_account_email", email).apply()
+
+                    val cloudJson: String? = null
+                    pendingGoogleSignInCallback?.invoke(cloudJson)
+                } else {
+                    pendingGoogleSignInCallback?.invoke(null)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                pendingGoogleSignInCallback?.invoke(null)
+            } finally {
+                pendingGoogleSignInCallback = null
+            }
+        }
+
+        if (!isOnboardingComplete) {
+            com.example.ministoreapp.ui.screens.onboarding.OnboardingScreen(
+                defaultPin = settings.securityPin.ifBlank { "526375" },
+                onGoogleSignInRequested = { onSuccess ->
+                    pendingGoogleSignInCallback = onSuccess
+                    googleSignInLauncher.launch(googleSignInClient.signInIntent)
+                },
+                onCreateCashier = { firstCashier ->
+                    lifecycleScope.launch {
+                        db.cashierDao().insertCashier(firstCashier)
+                    }
+                },
+                onUpdateSecurityPin = { newPin ->
+                    lifecycleScope.launch {
+                        val updated = settings.copy(securityPin = newPin, updatedAt = System.currentTimeMillis())
+                        db.securitySettingsDao().insertOrUpdate(updated)
+                    }
+                },
+                onOnboardingComplete = {
+                    prefs.edit().putBoolean("is_onboarding_complete", true).apply()
+                    isOnboardingComplete = true
+                }
+            )
+            return
+        }
+
         // App Launch Guard State
         var isAppUnlocked by remember { mutableStateOf(false) }
         var showSettingsPinPrompt by remember { mutableStateOf(false) }
         var activeSettingsDetailView by remember { mutableStateOf<String?>(null) }
-
-        val settings = securitySettings ?: SecuritySettingsEntity()
 
         // App Launch Security PIN Check
         if (settings.pinOnAppLaunchEnabled && !isAppUnlocked) {
@@ -169,21 +238,17 @@ class MainActivity : ComponentActivity() {
             )
         }
 
-        val context = androidx.compose.ui.platform.LocalContext.current
         val activity = (context as? android.app.Activity)
         var lastBackPressTime by remember { mutableLongStateOf(0L) }
 
         androidx.activity.compose.BackHandler(enabled = true) {
             when {
-                // 1. If in sub-settings view (Products, Vendors, Cashiers, etc.), go back to main Settings menu
                 activeSettingsDetailView != null -> {
                     activeSettingsDetailView = null
                 }
-                // 2. If in Settings or another bottom tab, switch back to Search tab
                 currentTab != TabScreen.Search -> {
                     currentTab = TabScreen.Search
                 }
-                // 3. Already on Main Search screen -> "Press back again to exit"
                 else -> {
                     val currentTime = System.currentTimeMillis()
                     if (currentTime - lastBackPressTime < 2000) {
@@ -203,39 +268,27 @@ class MainActivity : ComponentActivity() {
             else -> settings.storeName
         }
 
-        val showHeaderBackButton = currentTab == TabScreen.Settings
-
-        val onHeaderBackClick: (() -> Unit)? = if (currentTab == TabScreen.Settings) {
-            {
-                if (activeSettingsDetailView != null) {
-                    activeSettingsDetailView = null
-                } else {
-                    currentTab = TabScreen.Search
-                }
-            }
-        } else null
-
-        val showHeaderActions = currentTab != TabScreen.Settings
+        val showHeaderBackButton = currentTab == TabScreen.Settings && activeSettingsDetailView != null
 
         Scaffold(
             topBar = {
                 GlobalHeader(
                     title = headerTitle,
                     showBackButton = showHeaderBackButton,
-                    onBackClick = onHeaderBackClick,
-                    showActions = showHeaderActions,
+                    onBackClick = { activeSettingsDetailView = null },
                     onSyncClick = {
                         lifecycleScope.launch {
                             try {
-                                val json = syncRepo.exportChangesetJson()
-                                val result = syncRepo.importAndMergeChangeset(this@MainActivity, json)
+                                val jsonStr = syncRepo.exportChangesetJson()
+                                val result = syncRepo.importAndMergeChangeset(this@MainActivity, jsonStr)
                                 if (result.isSuccess) {
-                                    Toast.makeText(this@MainActivity, "Google Drive Delta Sync & Merge Complete!", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(this@MainActivity, "Data synced successfully!", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(this@MainActivity, "Sync Error: ${result.exceptionOrNull()?.message}", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(this@MainActivity, "Sync completed with warnings", Toast.LENGTH_SHORT).show()
                                 }
                             } catch (e: Exception) {
-                                Toast.makeText(this@MainActivity, "Sync Failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                e.printStackTrace()
+                                Toast.makeText(this@MainActivity, "Sync Error: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                         }
                     },
@@ -250,28 +303,37 @@ class MainActivity : ComponentActivity() {
                 )
             },
             bottomBar = {
+                val navContainerColor = if (isDarkTheme) {
+                    androidx.compose.ui.graphics.Color(0xFF1B1E1C)
+                } else {
+                    MaterialTheme.colorScheme.surface
+                }
+
                 NavigationBar(
-                    containerColor = if (isDarkTheme) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.White,
-                    contentColor = MaterialTheme.colorScheme.onSurface
+                    containerColor = navContainerColor
                 ) {
-                    val items = listOf(TabScreen.Search, TabScreen.Events, TabScreen.Credit, TabScreen.Info, TabScreen.Restock)
-                    items.forEach { tab ->
+                    val items = listOf(
+                        TabScreen.Search,
+                        TabScreen.Events,
+                        TabScreen.Credit,
+                        TabScreen.Restock,
+                        TabScreen.Info
+                    )
+                    items.forEach { screen ->
                         NavigationBarItem(
-                            icon = { Icon(tab.icon, contentDescription = tab.title) },
-                            label = { Text(tab.title, fontWeight = FontWeight.SemiBold) },
-                            selected = currentTab == tab,
-                            colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = if (isDarkTheme) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color(0xFFDCECE2),
-                                selectedIconColor = if (isDarkTheme) MaterialTheme.colorScheme.onPrimaryContainer else androidx.compose.ui.graphics.Color(0xFF0B5E38),
-                                selectedTextColor = if (isDarkTheme) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color(0xFF0B5E38),
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
+                            icon = { Icon(screen.icon, contentDescription = screen.title) },
+                            label = { Text(screen.title) },
+                            selected = currentTab == screen,
                             onClick = {
-                                if (tab == TabScreen.Settings && settings.pinOnSettingsOpeningEnabled) {
-                                    showSettingsPinPrompt = true
+                                if (screen == TabScreen.Settings) {
+                                    if (settings.pinOnSettingsOpeningEnabled && currentTab != TabScreen.Settings) {
+                                        showSettingsPinPrompt = true
+                                    } else {
+                                        activeSettingsDetailView = null
+                                        currentTab = TabScreen.Settings
+                                    }
                                 } else {
-                                    currentTab = tab
+                                    currentTab = screen
                                 }
                             }
                         )
@@ -286,49 +348,48 @@ class MainActivity : ComponentActivity() {
             ) {
                 when (currentTab) {
                     TabScreen.Search -> SearchScreen(
-                        products = searchProducts,
-                        searchQuery = "",
-                        onSearchQueryChange = {},
+                        products = products,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = { searchQuery = it },
                         onAddToOrder = { restockItem ->
                             lifecycleScope.launch {
                                 db.restockItemDao().insertRestockItem(restockItem)
-                                Toast.makeText(this@MainActivity, "Added '${restockItem.productName}' to Restock List!", Toast.LENGTH_SHORT).show()
                             }
                         }
                     )
                     TabScreen.Events -> EventsScreen(
                         events = events,
                         cashiers = cashiers,
-                        onCreateEvent = { event ->
+                        onCreateEvent = { newEvent ->
                             lifecycleScope.launch {
-                                db.eventDao().insertEvent(event)
+                                db.eventDao().insertEvent(newEvent)
+                                val descName = newEvent.description.ifBlank { newEvent.transferType ?: newEvent.type }
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "EVENT_ADD",
-                                        description = "Logged event '${event.type}' total ₱${event.total}",
-                                        cashierId = event.cashierId,
-                                        cashierName = event.cashierName
+                                        cashierId = newEvent.cashierId,
+                                        cashierName = newEvent.cashierName,
+                                        actionType = "LOG_EVENT",
+                                        description = "Logged event '$descName' (₱${newEvent.total.roundToInt()})"
                                     )
                                 )
                             }
                         },
                         onSettleEvent = { event, cashier, note ->
                             lifecycleScope.launch {
-                                val settledEvent = event.copy(
+                                val updated = event.copy(
                                     isSettled = true,
-                                    settlementTimestamp = System.currentTimeMillis(),
                                     settlementCashierId = cashier.id,
                                     settlementCashierName = cashier.name,
                                     settlementNote = note,
                                     updatedAt = System.currentTimeMillis()
                                 )
-                                db.eventDao().updateEvent(settledEvent)
+                                db.eventDao().insertEvent(updated)
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = if (event.type == "TASK") "TASK_COMPLETE" else "EVENT_SETTLE",
-                                        description = if (event.type == "TASK") "Completed Task '${event.description}'. Note: $note" else "Settled Fund Transfer event total ₱${event.total}. Note: $note",
                                         cashierId = cashier.id,
-                                        cashierName = cashier.name
+                                        cashierName = cashier.name,
+                                        actionType = "SETTLE_EVENT",
+                                        description = "Settled event '${event.description}'"
                                     )
                                 )
                             }
@@ -338,10 +399,10 @@ class MainActivity : ComponentActivity() {
                                 db.eventDao().deleteEvent(event)
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "EVENT_DELETE",
-                                        description = "DELETED event '${event.type}' (${event.description})",
                                         cashierId = cashier.id,
-                                        cashierName = cashier.name
+                                        cashierName = cashier.name,
+                                        actionType = "DELETE_EVENT",
+                                        description = "Deleted event '${event.description}'"
                                     )
                                 )
                             }
@@ -357,91 +418,72 @@ class MainActivity : ComponentActivity() {
                                 db.customerDao().insertCustomer(customer)
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "CUSTOMER_ADD",
-                                        description = "Added customer '${customer.name}'",
                                         cashierId = cashier.id,
-                                        cashierName = cashier.name
+                                        cashierName = cashier.name,
+                                        actionType = "ADD_CUSTOMER",
+                                        description = "Added customer ${customer.name}"
                                     )
                                 )
                             }
                         },
-                        onAddCredit = { customer, amount, notes, borrowedAt, cashier ->
+                        onAddCredit = { customer, amount, note, borrowedAt, cashier ->
                             lifecycleScope.launch {
-                                val newBalance = customer.balance + amount
-                                db.customerDao().updateBalance(customer.id, newBalance)
+                                val updated = customer.copy(balance = customer.balance + amount, updatedAt = System.currentTimeMillis())
+                                db.customerDao().insertCustomer(updated)
                                 db.creditTransactionDao().insertTransaction(
                                     CreditTransactionEntity(
                                         customerId = customer.id,
-                                        timestamp = System.currentTimeMillis(),
-                                        borrowedAt = borrowedAt,
-                                        type = "CREDIT_ADD",
                                         totalAmount = amount,
-                                        remainingBalance = newBalance,
+                                        type = "CREDIT_ADD",
+                                        notes = note,
+                                        borrowedAt = borrowedAt,
                                         cashierId = cashier.id,
-                                        cashierName = cashier.name,
-                                        notes = notes
+                                        cashierName = cashier.name
                                     )
                                 )
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "CREDIT_ADD",
-                                        description = "Added ₱$amount credit to '${customer.name}'. New Balance: ₱$newBalance",
                                         cashierId = cashier.id,
-                                        cashierName = cashier.name
+                                        cashierName = cashier.name,
+                                        actionType = "CREDIT_BORROW",
+                                        description = "Utang of ₱${amount.roundToInt()} for customer ${customer.name}"
                                     )
                                 )
                             }
                         },
                         onMakePayment = { customer, amount, cashier ->
                             lifecycleScope.launch {
-                                val newBalance = (customer.balance - amount).coerceAtLeast(0.0)
-                                db.customerDao().updateBalance(customer.id, newBalance)
+                                val updated = customer.copy(balance = (customer.balance - amount).coerceAtLeast(0.0), updatedAt = System.currentTimeMillis())
+                                db.customerDao().insertCustomer(updated)
                                 db.creditTransactionDao().insertTransaction(
                                     CreditTransactionEntity(
                                         customerId = customer.id,
-                                        timestamp = System.currentTimeMillis(),
-                                        borrowedAt = System.currentTimeMillis(),
-                                        type = if (newBalance == 0.0) "PAYMENT_FULL" else "PAYMENT_PARTIAL",
                                         totalAmount = amount,
-                                        amountTendered = amount,
-                                        remainingBalance = newBalance,
-                                        cashierId = cashier.id,
-                                        cashierName = cashier.name,
-                                        notes = "Payment received"
-                                    )
-                                )
-                                db.auditLogDao().insertAuditLog(
-                                    AuditLogEntity(
-                                        actionType = "CREDIT_PAYMENT",
-                                        description = "Received ₱$amount payment from '${customer.name}'. Remaining: ₱$newBalance",
+                                        type = "PAYMENT_PARTIAL",
                                         cashierId = cashier.id,
                                         cashierName = cashier.name
                                     )
                                 )
+                                db.auditLogDao().insertAuditLog(
+                                    AuditLogEntity(
+                                        cashierId = cashier.id,
+                                        cashierName = cashier.name,
+                                        actionType = "CREDIT_PAYMENT",
+                                        description = "Bayad of ₱${amount.roundToInt()} from customer ${customer.name}"
+                                    )
+                                )
                             }
                         },
-                        getTransactionsForCustomerFlow = { custId ->
-                            db.creditTransactionDao().getTransactionsForCustomerFlow(custId)
+                        getTransactionsForCustomerFlow = { customerId ->
+                            db.creditTransactionDao().getTransactionsForCustomerFlow(customerId)
                         }
-
-                    )
-                    TabScreen.Info -> InfoScreen(
-                        securitySettings = settings,
-                        priceHistory = priceHistory,
-                        vendorStores = stores,
-                        vendors = vendors,
-                        allProducts = products,
-                        banRecords = banRecords,
-                        creditTransactions = creditTransactions,
-                        customers = customers,
-                        wholesaleProducts = wholesaleProducts
                     )
                     TabScreen.Restock -> RestockScreen(
                         restockItems = restockItems,
                         allProducts = products,
                         onUpdateQuantity = { item, newQty ->
                             lifecycleScope.launch {
-                                db.restockItemDao().updateRestockItem(item.copy(quantity = newQty))
+                                db.restockItemDao().insertRestockItem(item.copy(quantity = newQty))
                             }
                         },
                         onRemoveItem = { item ->
@@ -455,10 +497,21 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     )
+                    TabScreen.Info -> InfoScreen(
+                        securitySettings = securitySettings,
+                        priceHistory = priceHistory,
+                        vendorStores = stores,
+                        vendors = vendors,
+                        allProducts = products,
+                        banRecords = banRecords,
+                        creditTransactions = creditTransactions,
+                        customers = customers,
+                        wholesaleProducts = products.filter { it.isWholesaleParent }
+                    )
                     TabScreen.Settings -> SettingsScreen(
                         activeDetailView = activeSettingsDetailView,
                         onActiveDetailViewChange = { activeSettingsDetailView = it },
-                        securitySettings = settings,
+                        securitySettings = securitySettings,
                         products = products,
                         productGroups = productGroups,
                         cashiers = cashiers,
@@ -473,35 +526,40 @@ class MainActivity : ComponentActivity() {
                         vendors = vendors,
                         isDarkTheme = isDarkTheme,
                         onToggleDarkTheme = onToggleDarkTheme,
+                        onSwitchGoogleAccount = {
+                            pendingGoogleSignInCallback = { _ -> }
+                            googleSignInLauncher.launch(googleSignInClient.signInIntent)
+                        },
                         onSaveProductGroup = { group, generatedItems, cashier ->
                             lifecycleScope.launch {
                                 db.productGroupDao().insertGroup(group)
-                                db.productDao().deleteProductsByGroupId(group.id)
-                                if (generatedItems.isNotEmpty()) {
-                                    db.productDao().insertProducts(generatedItems)
+
+                                val oldProducts = db.productDao().getAllProducts().filter { it.groupId == group.id }
+                                oldProducts.forEach { old ->
+                                    val priceDiff = generatedItems.find { it.comboKey == old.comboKey }?.sellingPrice?.minus(old.sellingPrice) ?: 0.0
+                                    if (kotlin.math.abs(priceDiff) >= 0.01) {
+                                        db.priceHistoryDao().insertPriceHistory(
+                                            PriceHistoryEntity(
+                                                productId = old.id,
+                                                productName = old.name,
+                                                oldPrice = old.sellingPrice,
+                                                newPrice = old.sellingPrice + priceDiff,
+                                                cashierId = cashier.id,
+                                                cashierName = cashier.name
+                                            )
+                                        )
+                                    }
                                 }
-                                if (group.brand.isNotBlank()) {
-                                    db.masterDataDao().insertBrand(com.example.ministoreapp.data.local.entities.BrandEntity(name = group.brand))
-                                }
-                                if (group.category.isNotBlank()) {
-                                    db.masterDataDao().insertCategory(com.example.ministoreapp.data.local.entities.CategoryEntity(name = group.category))
-                                }
-                                if (group.storeName.isNotBlank()) {
-                                    db.masterDataDao().insertVendor(com.example.ministoreapp.data.local.entities.VendorEntity(name = group.storeName))
-                                }
-                                if (group.containerType.isNotBlank()) {
-                                    db.masterDataDao().insertContainer(com.example.ministoreapp.data.local.entities.ContainerEntity(name = group.containerType))
-                                }
-                                if (group.wholesaleUnit.isNotBlank()) {
-                                    db.masterDataDao().insertWholesaleUnit(com.example.ministoreapp.data.local.entities.WholesaleUnitEntity(name = group.wholesaleUnit))
-                                }
+
+                                generatedItems.forEach { db.productDao().insertProduct(it) }
+
                                 val displayTitle = formatGroupDisplayTitle(group.baseName, group.variants, group.unitSize, group.containerType)
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "PRODUCT_GROUP_SAVE",
-                                        description = "Saved product group '$displayTitle' (${generatedItems.size} search items)",
                                         cashierId = cashier.id,
-                                        cashierName = cashier.name
+                                        cashierName = cashier.name,
+                                        actionType = "SAVE_PRODUCT_RECIPE",
+                                        description = "Saved product recipe '$displayTitle' (${generatedItems.size} items generated)"
                                     )
                                 )
                             }
@@ -509,67 +567,57 @@ class MainActivity : ComponentActivity() {
                         onDeleteSingleProduct = { product, cashier ->
                             lifecycleScope.launch {
                                 db.productDao().deleteProduct(product)
-                                val remainingCount = if (product.groupId != null) db.productDao().getSearchItemCountForGroup(product.groupId) else 0
-
-                                if (remainingCount == 0 && product.groupId != null) {
-                                    db.productGroupDao().deleteGroupById(product.groupId)
-                                } else if (product.groupId != null) {
-                                    val group = db.productGroupDao().getGroupById(product.groupId)
-                                    if (group != null && product.comboKey.isNotBlank()) {
-                                        val existingKeys = group.excludedKeys.split(",").map { it.trim() }.filter { it.isNotBlank() }.toMutableList()
-                                        if (!existingKeys.contains(product.comboKey)) {
-                                            existingKeys.add(product.comboKey)
-                                            db.productGroupDao().updateGroup(group.copy(excludedKeys = existingKeys.joinToString(",")))
-                                        }
-                                    }
-                                }
-
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "PRODUCT_DELETE_SINGLE",
-                                        description = "DELETED single product '${product.name}'",
                                         cashierId = cashier.id,
-                                        cashierName = cashier.name
+                                        cashierName = cashier.name,
+                                        actionType = "DELETE_PRODUCT",
+                                        description = "Deleted item '${product.name}'"
                                     )
                                 )
                             }
                         },
                         onDeleteProductGroup = { groupId, cashier ->
                             lifecycleScope.launch {
-                                db.productDao().deleteProductsByGroupId(groupId)
-                                db.productGroupDao().deleteGroupById(groupId)
-                                db.auditLogDao().insertAuditLog(
-                                    AuditLogEntity(
-                                        actionType = "PRODUCT_GROUP_DELETE",
-                                        description = "DELETED product group ID: $groupId",
-                                        cashierId = cashier.id,
-                                        cashierName = cashier.name
+                                val groupObj = db.productGroupDao().getGroupById(groupId)
+                                val groupProducts = db.productDao().getAllProducts().filter { it.groupId == groupId }
+                                groupProducts.forEach { db.productDao().deleteProduct(it) }
+                                if (groupObj != null) {
+                                    db.productGroupDao().deleteGroup(groupObj)
+                                    val displayTitle = formatGroupDisplayTitle(groupObj.baseName, groupObj.variants, groupObj.unitSize, groupObj.containerType)
+                                    db.auditLogDao().insertAuditLog(
+                                        AuditLogEntity(
+                                            cashierId = cashier.id,
+                                            cashierName = cashier.name,
+                                            actionType = "DELETE_PRODUCT_RECIPE",
+                                            description = "Deleted product recipe '$displayTitle'"
+                                        )
                                     )
-                                )
+                                }
                             }
                         },
-                        onSaveCashier = { cashier, performer, reason ->
+                        onSaveCashier = { cashier, performerName, reason ->
                             lifecycleScope.launch {
                                 db.cashierDao().insertCashier(cashier)
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "CASHIER_SAVE",
-                                        description = "Saved/Edited Cashier '${cashier.name}'. Performer: $performer, Reason: $reason",
                                         cashierId = cashier.id,
-                                        cashierName = if (performer.isNotBlank()) performer else cashier.name
+                                        cashierName = performerName,
+                                        actionType = "SAVE_CASHIER",
+                                        description = "Saved cashier '${cashier.name}' (Note: $reason)"
                                     )
                                 )
                             }
                         },
-                        onDeleteCashier = { cashier, performer, reason ->
+                        onDeleteCashier = { cashier, performerName, reason ->
                             lifecycleScope.launch {
                                 db.cashierDao().deleteCashier(cashier)
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "CASHIER_DELETE",
-                                        description = "DELETED Cashier '${cashier.name}'. Performer: $performer, Reason: $reason",
                                         cashierId = cashier.id,
-                                        cashierName = if (performer.isNotBlank()) performer else cashier.name
+                                        cashierName = performerName,
+                                        actionType = "DELETE_CASHIER",
+                                        description = "Deleted cashier '${cashier.name}' (Reason: $reason)"
                                     )
                                 )
                             }
@@ -579,10 +627,10 @@ class MainActivity : ComponentActivity() {
                                 db.banRecordDao().insertBanRecord(ban)
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "BAN_ADD",
-                                        description = "Added Ban Record for '${ban.fullName}'",
                                         cashierId = cashier.id,
-                                        cashierName = cashier.name
+                                        cashierName = cashier.name,
+                                        actionType = "ADD_BAN_RECORD",
+                                        description = "Added credit ban record for ${ban.fullName}"
                                     )
                                 )
                             }
@@ -592,10 +640,10 @@ class MainActivity : ComponentActivity() {
                                 db.banRecordDao().deleteBanRecord(ban)
                                 db.auditLogDao().insertAuditLog(
                                     AuditLogEntity(
-                                        actionType = "BAN_DELETE",
-                                        description = "DELETED Ban Record for '${ban.fullName}'",
                                         cashierId = cashier.id,
-                                        cashierName = cashier.name
+                                        cashierName = cashier.name,
+                                        actionType = "DELETE_BAN_RECORD",
+                                        description = "Deleted credit ban record for ${ban.fullName}"
                                     )
                                 )
                             }
