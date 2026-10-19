@@ -924,7 +924,7 @@ fun UniversalAddCreditDialog(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = "Add Item", modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("+ Add Item", fontWeight = FontWeight.Bold)
+                            Text("Add Item", fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -998,7 +998,7 @@ fun UniversalAddCreditDialog(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = "Add Manual Item", modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("+ Add Manual", fontWeight = FontWeight.Bold)
+                            Text("Add Manual", fontWeight = FontWeight.Bold)
                         }
                     }
 
