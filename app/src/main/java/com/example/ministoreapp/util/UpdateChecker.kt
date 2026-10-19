@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -84,15 +86,50 @@ object UpdateChecker {
     private fun showUpdateDialog(context: Context, tagName: String, releaseNotes: String, downloadUrl: String) {
         AlertDialog.Builder(context)
             .setTitle("Update Available ($tagName)")
-            .setMessage("A new version ($tagName) of MiniStoreApp is available.\n\nRelease Notes:\n$releaseNotes")
-            .setPositiveButton("Update") { _, _ ->
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .setMessage("A new version ($tagName) of SariSync is available.\n\nRelease Notes:\n$releaseNotes")
+            .setPositiveButton("Download & Install") { _, _ ->
+                if (downloadUrl.endsWith(".apk", ignoreCase = true)) {
+                    val progressDialog = @Suppress("DEPRECATION") android.app.ProgressDialog(context).apply {
+                        setTitle("Downloading SariSync $tagName")
+                        setMessage("Downloading update APK...")
+                        setProgressStyle(@Suppress("DEPRECATION") android.app.ProgressDialog.STYLE_HORIZONTAL)
+                        max = 100
+                        setCancelable(false)
+                        show()
                     }
-                    context.startActivity(intent)
-                } catch (e: Exception) {
-                    Toast.makeText(context, "Cannot open browser: ${e.message}", Toast.LENGTH_SHORT).show()
+
+                    kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch {
+                        val result = com.example.ministoreapp.domain.AppUpdateManager.downloadAndInstallApk(
+                            context = context,
+                            downloadUrl = downloadUrl,
+                            onProgress = { progress ->
+                                progressDialog.progress = progress
+                            }
+                        )
+                        progressDialog.dismiss()
+
+                        if (result.isFailure) {
+                            val err = result.exceptionOrNull()?.message ?: "Download failed"
+                            Toast.makeText(context, "Download Error: $err", Toast.LENGTH_LONG).show()
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    }
+                } else {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Cannot open browser: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
             .setNegativeButton("Later", null)
