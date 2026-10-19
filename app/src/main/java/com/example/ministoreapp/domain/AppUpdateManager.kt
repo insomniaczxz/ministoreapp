@@ -24,10 +24,20 @@ data class AppReleaseInfo(
 
 object AppUpdateManager {
 
-    const val CURRENT_VERSION = "1.0.0"
+    const val CURRENT_VERSION = "1.2.0"
 
     var defaultOwner: String = "insomniaczxz"
     var defaultRepo: String = "ministoreapp"
+
+    fun getCurrentVersion(context: Context? = null): String {
+        if (context == null) return CURRENT_VERSION
+        return try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            pInfo.versionName ?: CURRENT_VERSION
+        } catch (e: Exception) {
+            CURRENT_VERSION
+        }
+    }
 
     suspend fun checkForUpdates(
         owner: String = defaultOwner,

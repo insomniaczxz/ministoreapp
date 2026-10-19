@@ -3007,7 +3007,7 @@ fun AboutAppPlaceholder() {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Ministoreapp", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 Text("Powered by James Lasquite", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Current Version: v${AppUpdateManager.CURRENT_VERSION}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                Text("Current Version: v${AppUpdateManager.getCurrentVersion(context)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
