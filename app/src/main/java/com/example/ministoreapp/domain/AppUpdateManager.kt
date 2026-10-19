@@ -24,25 +24,23 @@ data class AppReleaseInfo(
 
 object AppUpdateManager {
 
-    const val CURRENT_VERSION = "1.2.0"
-
     var defaultOwner: String = "insomniaczxz"
     var defaultRepo: String = "ministoreapp"
 
-    fun getCurrentVersion(context: Context? = null): String {
-        if (context == null) return CURRENT_VERSION
+    fun getCurrentVersion(context: Context): String {
         return try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            pInfo.versionName ?: CURRENT_VERSION
+            pInfo.versionName ?: "1.0.0"
         } catch (e: Exception) {
-            CURRENT_VERSION
+            "1.0.0"
         }
     }
 
     suspend fun checkForUpdates(
+        context: Context,
         owner: String = defaultOwner,
         repo: String = defaultRepo,
-        currentVersion: String = CURRENT_VERSION
+        currentVersion: String = getCurrentVersion(context)
     ): Result<AppReleaseInfo> = withContext(Dispatchers.IO) {
         try {
             val urlString = "https://api.github.com/repos/$owner/$repo/releases/latest"
