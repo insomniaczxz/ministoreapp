@@ -339,7 +339,7 @@ fun SettingsScreen(
                 item {
                     SettingsTileRow(
                         title = "About + Update App",
-                        subtitle = "SariSync v${AppUpdateManager.CURRENT_VERSION} · Check for Updates",
+                        subtitle = "SariSync v${AppUpdateManager.getCurrentVersion(LocalContext.current)} · Check for Updates",
                         icon = Icons.Default.Info,
                         onClick = { onActiveDetailViewChange("ABOUT") }
                     )
@@ -3007,7 +3007,7 @@ fun AboutAppPlaceholder() {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("SariSync", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 Text("Powered by James Lasquite", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Current Version: v${AppUpdateManager.getCurrentVersion(context)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                Text("Current Version: v${AppUpdateManager.getCurrentVersion(LocalContext.current)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
@@ -3020,9 +3020,9 @@ fun AboutAppPlaceholder() {
                         isCheckingUpdates = true
                         coroutineScope.launch {
                             val result = AppUpdateManager.checkForUpdates(
+                                context = context,
                                 owner = "insomniaczxz",
-                                repo = "ministoreapp",
-                                currentVersion = AppUpdateManager.getCurrentVersion(context)
+                                repo = "ministoreapp"
                             )
                             isCheckingUpdates = false
                             if (result.isSuccess) {
