@@ -32,7 +32,7 @@ object UpdateChecker {
                 val rootJson = JSONObject(jsonText)
 
                 val tagName = rootJson.optString("tag_name", "")
-                val releaseNotes = rootJson.optString("body", "A new update for MiniStoreApp is available.")
+                val releaseNotes = rootJson.optString("body", "A new update for SariSync is available.")
 
                 var downloadUrl = ""
                 val assetsArray = rootJson.optJSONArray("assets")
