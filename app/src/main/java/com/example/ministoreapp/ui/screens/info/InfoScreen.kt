@@ -41,6 +41,18 @@ data class StoreBulletinLogItem(
     val performer: String
 )
 
+fun extractTodayRouteLocation(routeSchedule: String, todayDayShort: String): String {
+    if (routeSchedule.isBlank()) return "Scheduled Route"
+    val parts = routeSchedule.split("|").map { it.trim() }
+    for (part in parts) {
+        if (part.startsWith(todayDayShort, ignoreCase = true) || part.contains(todayDayShort, ignoreCase = true)) {
+            val locationPart = part.substringAfter(":", part).trim()
+            return if (locationPart.isNotBlank()) locationPart else part
+        }
+    }
+    return routeSchedule
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InfoScreen(
@@ -236,7 +248,110 @@ fun InfoScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+
+        val todayDayShort = remember { SimpleDateFormat("E", Locale.ENGLISH).format(Date()) }
+        val todayFullDay = remember { SimpleDateFormat("EEEE", Locale.ENGLISH).format(Date()) }
+        val storeAddressClean = remember(securitySettings) { securitySettings?.storeAddress?.trim() ?: "" }
+
+        val todayRouteVendors = remember(vendors, todayDayShort) {
+            vendors.filter { v ->
+                if (!v.isTruckPanel) false
+                else if (v.routeScheduleType == "DAILY") true
+                else if (v.routeScheduleType == "SPECIFIC_DAYS" && v.routeSchedule.isBlank()) false
+                else v.routeSchedule.contains(todayDayShort, ignoreCase = true) || v.routeSchedule.contains("Daily", ignoreCase = true)
+            }
+        }
+
+        if (todayRouteVendors.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "🚚 Vendor Deliveries Scheduled Today ($todayFullDay)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    todayRouteVendors.forEach { v ->
+                        val todayLocation = extractTodayRouteLocation(v.routeSchedule, todayDayShort)
+                        val isStoreLocationMatch = storeAddressClean.isNotBlank() && (
+                            todayLocation.contains(storeAddressClean, ignoreCase = true) ||
+                            storeAddressClean.contains(todayLocation, ignoreCase = true) ||
+                            storeAddressClean.split(" ", ",", "-", "/").any { word ->
+                                word.length >= 3 && todayLocation.contains(word, ignoreCase = true)
+                            }
+                        )
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isStoreLocationMatch) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else MaterialTheme.colorScheme.surface
+                            ),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isStoreLocationMatch) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = v.name,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+
+                                    if (isStoreLocationMatch) {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = MaterialTheme.colorScheme.primary
+                                        ) {
+                                            Text(
+                                                text = "🎯 ARRIVING AT STORE LOCATION",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Text(
+                                    text = "📍 Today's Route: $todayLocation",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isStoreLocationMatch) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                val contactStr = if (v.agentContactNumber.isNotBlank()) v.agentContactNumber else v.contactNumber
+                                if (v.agentName.isNotBlank() || contactStr.isNotBlank()) {
+                                    Text(
+                                        text = "Agent: ${v.agentName.ifBlank { "N/A" }}${if (contactStr.isNotBlank()) " ($contactStr)" else ""}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
 
         if (filteredLogs.isEmpty()) {
             Box(

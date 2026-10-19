@@ -115,13 +115,15 @@ fun SearchScreen(
         }
     }
 
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(if (isDark) MaterialTheme.colorScheme.background else androidx.compose.ui.graphics.Color(0xFFF3F4F6))
             .padding(12.dp)
     ) {
-        // Search Bar
+        // Search Bar (Pure White background in Light Theme)
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
@@ -137,15 +139,16 @@ fun SearchScreen(
             },
             shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                focusedContainerColor = if (isDark) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color(0xFFFFFFFF),
+                unfocusedContainerColor = if (isDark) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color(0xFFFFFFFF),
+                unfocusedBorderColor = if (isDark) MaterialTheme.colorScheme.outlineVariant else androidx.compose.ui.graphics.Color(0xFFE5E7EB)
             ),
             singleLine = true
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Filter Chips Row (All, Wholesale, Beverage, Categories)
+        // Filter Chips Row (Pure White inactive chips in Light Theme)
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
@@ -155,7 +158,10 @@ fun SearchScreen(
                     selected = activeCategoryFilter == category,
                     onClick = { activeCategoryFilter = category },
                     label = { Text(category, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold) },
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else androidx.compose.ui.graphics.Color(0xFFFFFFFF)
+                    )
                 )
             }
         }
@@ -241,13 +247,16 @@ fun VariantSearchCard(
     group: VariantGroupModel,
     onRestockClick: () -> Unit
 ) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.ui.graphics.Color(0xFFFFFFFF)
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 2.dp),
+        border = BorderStroke(1.dp, if (isDark) MaterialTheme.colorScheme.outlineVariant else androidx.compose.ui.graphics.Color(0xFFE5E7EB))
     ) {
         Column(
             modifier = Modifier
@@ -340,8 +349,8 @@ fun VariantSearchCard(
 
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else androidx.compose.ui.graphics.Color(0xFFF8FAFC),
+                        border = BorderStroke(1.dp, if (isDark) MaterialTheme.colorScheme.outlineVariant else androidx.compose.ui.graphics.Color(0xFFE2E8F0))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),

@@ -130,6 +130,12 @@ class MainActivity : ComponentActivity() {
         var currentTab by remember { mutableStateOf<TabScreen>(TabScreen.Search) }
         var searchQuery by remember { mutableStateOf("") }
 
+        val context = androidx.compose.ui.platform.LocalContext.current
+
+        LaunchedEffect(Unit) {
+            com.example.ministoreapp.util.UpdateChecker.checkForUpdates(context)
+        }
+
         // Live States from Database Flows
         val securitySettings by db.securitySettingsDao().getSettingsFlow().collectAsState(initial = null)
         val productGroups by db.productGroupDao().getAllGroupsFlow().collectAsState(initial = emptyList())
@@ -150,7 +156,6 @@ class MainActivity : ComponentActivity() {
         val wholesaleUnits by db.masterDataDao().getWholesaleUnitsFlow().collectAsState(initial = emptyList())
         val vendors by db.masterDataDao().getVendorsFlow().collectAsState(initial = emptyList())
 
-        val context = androidx.compose.ui.platform.LocalContext.current
         val prefs = remember { context.getSharedPreferences("ministore_prefs", MODE_PRIVATE) }
         var isOnboardingComplete by remember { mutableStateOf(prefs.getBoolean("is_onboarding_complete", false)) }
         var googleAccountEmail by remember { mutableStateOf(prefs.getString("google_account_email", null)) }
@@ -298,10 +303,12 @@ class MainActivity : ComponentActivity() {
                 }
             } else {
                 if (errorMsg != null) {
-                    Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "$errorMsg (Opening File Backup Picker...)", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "Opening File Backup Picker...", Toast.LENGTH_LONG).show()
                 }
-                pendingGoogleSignInCallback?.invoke(null)
-                pendingGoogleSignInCallback = null
+                // Auto fallback to storage/drive file picker if Google Auth fails (e.g. Error 10 on dev build)
+                driveFilePickerLauncher.launch(arrayOf("*/*"))
             }
         }
 
@@ -548,6 +555,16 @@ class MainActivity : ComponentActivity() {
                     MaterialTheme.colorScheme.surface
                 }
 
+                val todayDayShort = remember { java.text.SimpleDateFormat("E", java.util.Locale.ENGLISH).format(java.util.Date()) }
+                val upcomingVendorCount = remember(vendors, todayDayShort) {
+                    vendors.count { v ->
+                        if (!v.isTruckPanel) false
+                        else if (v.routeScheduleType == "DAILY") true
+                        else if (v.routeScheduleType == "SPECIFIC_DAYS" && v.routeSchedule.isBlank()) false
+                        else v.routeSchedule.contains(todayDayShort, ignoreCase = true) || v.routeSchedule.contains("Daily", ignoreCase = true)
+                    }
+                }
+
                 NavigationBar(
                     containerColor = navContainerColor
                 ) {
@@ -560,7 +577,17 @@ class MainActivity : ComponentActivity() {
                     )
                     items.forEach { screen ->
                         NavigationBarItem(
-                            icon = { Icon(screen.icon, contentDescription = screen.title) },
+                            icon = {
+                                if (screen == TabScreen.Info && upcomingVendorCount > 0) {
+                                    BadgedBox(
+                                        badge = { Badge { Text(upcomingVendorCount.toString()) } }
+                                    ) {
+                                        Icon(screen.icon, contentDescription = screen.title)
+                                    }
+                                } else {
+                                    Icon(screen.icon, contentDescription = screen.title)
+                                }
+                            },
                             label = { Text(screen.title) },
                             selected = currentTab == screen,
                             onClick = {
@@ -772,6 +799,28 @@ class MainActivity : ComponentActivity() {
                         },
                         onSaveProductGroup = { group, generatedItems, cashier ->
                             lifecycleScope.launch {
+                                // Auto-register any newly typed master data & vendors
+                                if (group.category.isNotBlank() && db.masterDataDao().getCategories().none { it.name.equals(group.category, ignoreCase = true) }) {
+                                    db.masterDataDao().insertCategory(com.example.ministoreapp.data.local.entities.CategoryEntity(name = group.category))
+                                }
+                                if (group.brand.isNotBlank() && db.masterDataDao().getBrands().none { it.name.equals(group.brand, ignoreCase = true) }) {
+                                    db.masterDataDao().insertBrand(com.example.ministoreapp.data.local.entities.BrandEntity(name = group.brand))
+                                }
+                                if (group.containerType.isNotBlank() && db.masterDataDao().getContainers().none { it.name.equals(group.containerType, ignoreCase = true) }) {
+                                    db.masterDataDao().insertContainer(com.example.ministoreapp.data.local.entities.ContainerEntity(name = group.containerType))
+                                }
+                                if (group.wholesaleUnit.isNotBlank() && db.masterDataDao().getWholesaleUnits().none { it.name.equals(group.wholesaleUnit, ignoreCase = true) }) {
+                                    db.masterDataDao().insertWholesaleUnit(com.example.ministoreapp.data.local.entities.WholesaleUnitEntity(name = group.wholesaleUnit))
+                                }
+                                if (group.vendorName.isNotBlank() && db.masterDataDao().getVendors().none { it.name.equals(group.vendorName, ignoreCase = true) }) {
+                                    db.masterDataDao().insertVendor(com.example.ministoreapp.data.local.entities.VendorEntity(name = group.vendorName))
+                                }
+                                generatedItems.forEach { prod ->
+                                    if (prod.unit.isNotBlank() && db.masterDataDao().getUnits().none { it.name.equals(prod.unit, ignoreCase = true) }) {
+                                        db.masterDataDao().insertUnit(com.example.ministoreapp.data.local.entities.UnitEntity(name = prod.unit))
+                                    }
+                                }
+
                                 db.productGroupDao().insertGroup(group)
 
                                 val oldProducts = db.productDao().getAllProducts().filter { it.groupId == group.id }
@@ -915,14 +964,30 @@ class MainActivity : ComponentActivity() {
                                 db.securitySettingsDao().insertOrUpdate(updatedSettings)
                             }
                         },
-                        onSaveVendor = { vendor ->
+                        onSaveVendor = { vendor, cashier ->
                             lifecycleScope.launch {
                                 db.masterDataDao().insertVendor(vendor)
+                                db.auditLogDao().insertAuditLog(
+                                    AuditLogEntity(
+                                        cashierId = cashier.id,
+                                        cashierName = cashier.name,
+                                        actionType = "SAVE_VENDOR",
+                                        description = "Saved vendor/supplier '${vendor.name}'"
+                                    )
+                                )
                             }
                         },
-                        onDeleteVendor = { vendor ->
+                        onDeleteVendor = { vendor, cashier ->
                             lifecycleScope.launch {
                                 db.masterDataDao().deleteVendor(vendor)
+                                db.auditLogDao().insertAuditLog(
+                                    AuditLogEntity(
+                                        cashierId = cashier.id,
+                                        cashierName = cashier.name,
+                                        actionType = "DELETE_VENDOR",
+                                        description = "Deleted vendor/supplier '${vendor.name}'"
+                                    )
+                                )
                             }
                         },
                         onExportBackupJson = {

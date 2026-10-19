@@ -99,8 +99,8 @@ fun SettingsScreen(
     onDeleteBanRecord: (BanRecordEntity, CashierEntity) -> Unit,
     onSaveMasterData: (type: String, name: String) -> Unit,
     onDeleteMasterData: (type: String, id: String) -> Unit,
-    onSaveVendor: (VendorEntity) -> Unit = {},
-    onDeleteVendor: (VendorEntity) -> Unit = {},
+    onSaveVendor: (VendorEntity, CashierEntity) -> Unit = { _, _ -> },
+    onDeleteVendor: (VendorEntity, CashierEntity) -> Unit = { _, _ -> },
     onExportBackupJson: () -> String = { "" },
     onImportBackupJson: (String) -> Unit = {},
     onSwitchGoogleAccount: () -> Unit = {},
@@ -108,6 +108,7 @@ fun SettingsScreen(
     onUpdateSecuritySettings: (SecuritySettingsEntity) -> Unit
 ) {
     val currentSettings = securitySettings ?: SecuritySettingsEntity()
+    var activeVerifiedCashier by remember { mutableStateOf<CashierEntity?>(null) }
 
     Column(
         modifier = Modifier
@@ -131,6 +132,8 @@ fun SettingsScreen(
                         containers = containers,
                         wholesaleUnits = wholesaleUnits,
                         vendors = vendors,
+                        activeVerifiedCashier = activeVerifiedCashier,
+                        onCashierVerified = { activeVerifiedCashier = it },
                         onSaveProductGroup = onSaveProductGroup,
                         onDeleteSingleProduct = onDeleteSingleProduct,
                         onDeleteProductGroup = onDeleteProductGroup
@@ -143,6 +146,9 @@ fun SettingsScreen(
                     )
                     "VENDORS" -> VendorsManagementTab(
                         vendors = vendors,
+                        cashiers = cashiers,
+                        activeVerifiedCashier = activeVerifiedCashier,
+                        onCashierVerified = { activeVerifiedCashier = it },
                         onSaveVendor = onSaveVendor,
                         onDeleteVendor = onDeleteVendor
                     )
@@ -154,6 +160,8 @@ fun SettingsScreen(
                         wholesaleUnits = wholesaleUnits,
                         banRecords = banRecords,
                         cashiers = cashiers,
+                        activeVerifiedCashier = activeVerifiedCashier,
+                        onCashierVerified = { activeVerifiedCashier = it },
                         onSaveMasterData = onSaveMasterData,
                         onDeleteMasterData = onDeleteMasterData,
                         onSaveBanRecord = onSaveBanRecord,
@@ -435,6 +443,8 @@ fun ProductsManagementTab(
     containers: List<ContainerEntity> = emptyList(),
     wholesaleUnits: List<WholesaleUnitEntity> = emptyList(),
     vendors: List<VendorEntity> = emptyList(),
+    activeVerifiedCashier: CashierEntity? = null,
+    onCashierVerified: (CashierEntity) -> Unit = {},
     onSaveProductGroup: (group: ProductGroupEntity, generatedItems: List<ProductEntity>, cashier: CashierEntity) -> Unit,
     onDeleteSingleProduct: (product: ProductEntity, cashier: CashierEntity) -> Unit,
     onDeleteProductGroup: (groupId: String, cashier: CashierEntity) -> Unit
@@ -631,6 +641,8 @@ fun ProductsManagementTab(
             containers = containers,
             wholesaleUnits = wholesaleUnits,
             vendors = vendors,
+            activeVerifiedCashier = activeVerifiedCashier,
+            onCashierVerified = onCashierVerified,
             onDismiss = {
                 showAddProductDialog = false
                 editingProductGroup = null
@@ -905,9 +917,11 @@ fun AutoCompletableOutlinedTextField(
     val filteredSuggestions = remember(value, suggestions) {
         if (value.isBlank()) suggestions else suggestions.filter { it.contains(value, ignoreCase = true) && !it.equals(value, ignoreCase = true) }
     }
+    val isNewValue = value.isNotBlank() && suggestions.none { it.equals(value, ignoreCase = true) }
+    val showDropdown = expanded && (filteredSuggestions.isNotEmpty() || isNewValue)
 
     ExposedDropdownMenuBox(
-        expanded = expanded && filteredSuggestions.isNotEmpty(),
+        expanded = showDropdown,
         onExpandedChange = { expanded = it },
         modifier = modifier
     ) {
@@ -923,7 +937,7 @@ fun AutoCompletableOutlinedTextField(
             singleLine = true
         )
 
-        if (filteredSuggestions.isNotEmpty()) {
+        if (filteredSuggestions.isNotEmpty() || isNewValue) {
             ExposedDropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false }
@@ -933,6 +947,24 @@ fun AutoCompletableOutlinedTextField(
                         text = { Text(selectionOption) },
                         onClick = {
                             onValueChange(selectionOption)
+                            expanded = false
+                        }
+                    )
+                }
+
+                if (isNewValue) {
+                    if (filteredSuggestions.isNotEmpty()) {
+                        HorizontalDivider()
+                    }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "➕ Add new $label: \"$value\"",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        onClick = {
                             expanded = false
                         }
                     )
@@ -980,6 +1012,8 @@ fun AddProductDialog(
     containers: List<ContainerEntity> = emptyList(),
     wholesaleUnits: List<WholesaleUnitEntity> = emptyList(),
     vendors: List<VendorEntity> = emptyList(),
+    activeVerifiedCashier: CashierEntity? = null,
+    onCashierVerified: (CashierEntity) -> Unit = {},
     onDismiss: () -> Unit,
     onSaveGroup: (group: ProductGroupEntity, generatedItems: List<ProductEntity>, cashier: CashierEntity) -> Unit
 ) {
@@ -1390,7 +1424,7 @@ fun AddProductDialog(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Diff. Size", fontWeight = FontWeight.Bold)
+                        Text("Save - Add a Different Size", fontWeight = FontWeight.Bold)
                     }
 
                     TextButton(
@@ -1405,104 +1439,188 @@ fun AddProductDialog(
             shape = RoundedCornerShape(24.dp)
         )
     } else {
-        val effectiveCashiers = remember(cashiers) {
-            if (cashiers.isEmpty()) listOf(CashierEntity(id = "default_owner", name = "Store Owner", pin = "0000")) else cashiers
-        }
-        CashierVerificationDialog(
-            cashiers = effectiveCashiers,
-            actionTitle = if (pendingSaveMode == "DIFF_SIZE") "Verify Cashier (Current Form Saved, Proceeding to Diff. Size)" else "Verify Cashier to Save Product Group",
-            onDismiss = { pendingSaveMode = null },
-            onVerified = { cashier ->
-                val sharedGroupId = existingGroup?.id ?: UUID.randomUUID().toString()
+        if (activeVerifiedCashier != null) {
+            val sharedGroupId = existingGroup?.id ?: UUID.randomUUID().toString()
+            val uncheckedKeys = previewItems.filter { !it.isCheckedState.value }.map { it.comboKey }
+            val excludedKeysString = uncheckedKeys.joinToString(",")
 
-                val uncheckedKeys = previewItems.filter { !it.isCheckedState.value }.map { it.comboKey }
-                val excludedKeysString = uncheckedKeys.joinToString(",")
+            val groupRecord = ProductGroupEntity(
+                id = sharedGroupId,
+                baseName = baseName,
+                aliases = aliases,
+                namingMode = "append",
+                variants = variantsInput,
+                brand = brand,
+                category = category,
+                vendorName = storeName,
+                unitSize = unitSize,
+                containerType = containerType,
+                hasWholesale = hasWholesale,
+                wholesaleUnit = wholesaleUnit,
+                wholesaleCost = wholesaleCost,
+                itemsPerPack = itemsPerPack,
+                wholesaleMarkupType = wholesaleMarkupType,
+                wholesaleMarkupValue = wholesaleMarkupInput.toDoubleOrNull() ?: 0.0,
+                wholesaleSellingPrice = wholesaleSellingPrice,
+                showWholesaleInSearch = showWholesaleInSearch,
+                hasRetail = hasRetail,
+                retailCost = computedRetailCost,
+                retailMarkupType = "FIXED",
+                retailMarkupValue = retailMarkupInput.toDoubleOrNull() ?: 0.0,
+                retailSellingPrice = retailSellingPrice,
+                bundleQty = if (hasBundle) bundleQtyInput.toIntOrNull() ?: 1 else 1,
+                bundlePrice = if (hasBundle) bundlePriceInput.toDoubleOrNull() ?: 0.0 else 0.0,
+                isBeverage = isBeverage,
+                coldRetailMarkup = coldRetailMarkupInput.toDoubleOrNull() ?: 0.0,
+                coldCaseMarkup = coldCaseMarkupInput.toDoubleOrNull() ?: 0.0,
+                excludedKeys = excludedKeysString,
+                updatedAt = System.currentTimeMillis()
+            )
 
-                val groupRecord = ProductGroupEntity(
-                    id = sharedGroupId,
-                    baseName = baseName,
+            val selectedItems = previewItems.filter { it.isCheckedState.value }
+
+            val generatedEntities = selectedItems.map { item ->
+                val finalPrice = item.customPriceInput.value.toDoubleOrNull() ?: item.defaultSellingPrice
+                ProductEntity(
+                    groupId = sharedGroupId,
+                    comboKey = item.comboKey,
+                    name = item.displayName,
                     aliases = aliases,
-                    namingMode = "append",
-                    variants = variantsInput,
-                    brand = brand,
                     category = category,
+                    brand = brand,
+                    unit = item.unit,
+                    unitSize = item.unitSize,
                     vendorName = storeName,
-                    unitSize = unitSize,
-                    containerType = containerType,
-                    hasWholesale = hasWholesale,
-                    wholesaleUnit = wholesaleUnit,
-                    wholesaleCost = wholesaleCost,
-                    itemsPerPack = itemsPerPack,
-                    wholesaleMarkupType = wholesaleMarkupType,
-                    wholesaleMarkupValue = wholesaleMarkupInput.toDoubleOrNull() ?: 0.0,
-                    wholesaleSellingPrice = wholesaleSellingPrice,
-                    showWholesaleInSearch = showWholesaleInSearch,
-                    hasRetail = hasRetail,
-                    retailCost = computedRetailCost,
-                    retailMarkupType = "FIXED",
-                    retailMarkupValue = retailMarkupInput.toDoubleOrNull() ?: 0.0,
-                    retailSellingPrice = retailSellingPrice,
-                    bundleQty = if (hasBundle) bundleQtyInput.toIntOrNull() ?: 1 else 1,
-                    bundlePrice = if (hasBundle) bundlePriceInput.toDoubleOrNull() ?: 0.0 else 0.0,
+                    cost = item.cost,
+                    sellingPrice = finalPrice,
                     isBeverage = isBeverage,
-                    coldRetailMarkup = coldRetailMarkupInput.toDoubleOrNull() ?: 0.0,
-                    coldCaseMarkup = coldCaseMarkupInput.toDoubleOrNull() ?: 0.0,
-                    excludedKeys = excludedKeysString,
+                    isWholesaleParent = item.isWholesale,
+                    itemsPerWholesalePack = item.itemsPerPack,
+                    variantType = item.variantType,
                     updatedAt = System.currentTimeMillis()
                 )
+            }
 
-                val selectedItems = previewItems.filter { it.isCheckedState.value }
+            onSaveGroup(groupRecord, generatedEntities, activeVerifiedCashier)
 
-                val generatedEntities = selectedItems.map { item ->
-                    val finalPrice = item.customPriceInput.value.toDoubleOrNull() ?: item.defaultSellingPrice
-                    ProductEntity(
-                        groupId = sharedGroupId,
-                        comboKey = item.comboKey,
-                        name = item.displayName,
+            if (pendingSaveMode == "DIFF_SIZE") {
+                unitSize = ""
+                containerType = ""
+                wholesaleCostInput = ""
+                retailCostInput = ""
+                wholesaleManualPriceInput = ""
+                retailMarkupInput = ""
+                pendingSaveMode = null
+            } else {
+                pendingSaveMode = null
+                onDismiss()
+            }
+        } else {
+            val effectiveCashiers = remember(cashiers) {
+                if (cashiers.isEmpty()) listOf(CashierEntity(id = "default_owner", name = "Store Owner", pin = "0000")) else cashiers
+            }
+            CashierVerificationDialog(
+                cashiers = effectiveCashiers,
+                actionTitle = if (pendingSaveMode == "DIFF_SIZE") "Verify Cashier (Current Form Saved, Proceeding to Diff. Size)" else "Verify Cashier to Save Product Group",
+                onDismiss = { pendingSaveMode = null },
+                onVerified = { cashier ->
+                    onCashierVerified(cashier)
+                    val sharedGroupId = existingGroup?.id ?: UUID.randomUUID().toString()
+
+                    val uncheckedKeys = previewItems.filter { !it.isCheckedState.value }.map { it.comboKey }
+                    val excludedKeysString = uncheckedKeys.joinToString(",")
+
+                    val groupRecord = ProductGroupEntity(
+                        id = sharedGroupId,
+                        baseName = baseName,
                         aliases = aliases,
-                        category = category,
+                        namingMode = "append",
+                        variants = variantsInput,
                         brand = brand,
-                        unit = item.unit,
-                        unitSize = item.unitSize,
+                        category = category,
                         vendorName = storeName,
-                        cost = item.cost,
-                        sellingPrice = finalPrice,
+                        unitSize = unitSize,
+                        containerType = containerType,
+                        hasWholesale = hasWholesale,
+                        wholesaleUnit = wholesaleUnit,
+                        wholesaleCost = wholesaleCost,
+                        itemsPerPack = itemsPerPack,
+                        wholesaleMarkupType = wholesaleMarkupType,
+                        wholesaleMarkupValue = wholesaleMarkupInput.toDoubleOrNull() ?: 0.0,
+                        wholesaleSellingPrice = wholesaleSellingPrice,
+                        showWholesaleInSearch = showWholesaleInSearch,
+                        hasRetail = hasRetail,
+                        retailCost = computedRetailCost,
+                        retailMarkupType = "FIXED",
+                        retailMarkupValue = retailMarkupInput.toDoubleOrNull() ?: 0.0,
+                        retailSellingPrice = retailSellingPrice,
+                        bundleQty = if (hasBundle) bundleQtyInput.toIntOrNull() ?: 1 else 1,
+                        bundlePrice = if (hasBundle) bundlePriceInput.toDoubleOrNull() ?: 0.0 else 0.0,
                         isBeverage = isBeverage,
-                        isWholesaleParent = item.isWholesale,
-                        itemsPerWholesalePack = item.itemsPerPack,
-                        variantType = item.variantType,
+                        coldRetailMarkup = coldRetailMarkupInput.toDoubleOrNull() ?: 0.0,
+                        coldCaseMarkup = coldCaseMarkupInput.toDoubleOrNull() ?: 0.0,
+                        excludedKeys = excludedKeysString,
                         updatedAt = System.currentTimeMillis()
                     )
-                }
 
-                onSaveGroup(groupRecord, generatedEntities, cashier)
+                    val selectedItems = previewItems.filter { it.isCheckedState.value }
 
-                if (pendingSaveMode == "DIFF_SIZE") {
-                    unitSize = ""
-                    containerType = ""
-                    wholesaleCostInput = ""
-                    retailCostInput = ""
-                    wholesaleManualPriceInput = ""
-                    retailMarkupInput = ""
-                    pendingSaveMode = null
-                } else {
-                    pendingSaveMode = null
-                    onDismiss()
+                    val generatedEntities = selectedItems.map { item ->
+                        val finalPrice = item.customPriceInput.value.toDoubleOrNull() ?: item.defaultSellingPrice
+                        ProductEntity(
+                            groupId = sharedGroupId,
+                            comboKey = item.comboKey,
+                            name = item.displayName,
+                            aliases = aliases,
+                            category = category,
+                            brand = brand,
+                            unit = item.unit,
+                            unitSize = item.unitSize,
+                            vendorName = storeName,
+                            cost = item.cost,
+                            sellingPrice = finalPrice,
+                            isBeverage = isBeverage,
+                            isWholesaleParent = item.isWholesale,
+                            itemsPerWholesalePack = item.itemsPerPack,
+                            variantType = item.variantType,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+
+                    onSaveGroup(groupRecord, generatedEntities, cashier)
+
+                    if (pendingSaveMode == "DIFF_SIZE") {
+                        unitSize = ""
+                        containerType = ""
+                        wholesaleCostInput = ""
+                        retailCostInput = ""
+                        wholesaleManualPriceInput = ""
+                        retailMarkupInput = ""
+                        pendingSaveMode = null
+                    } else {
+                        pendingSaveMode = null
+                        onDismiss()
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 }
 
 @Composable
 fun VendorsManagementTab(
     vendors: List<VendorEntity>,
-    onSaveVendor: (VendorEntity) -> Unit,
-    onDeleteVendor: (VendorEntity) -> Unit
+    cashiers: List<CashierEntity> = emptyList(),
+    activeVerifiedCashier: CashierEntity? = null,
+    onCashierVerified: (CashierEntity) -> Unit = {},
+    onSaveVendor: (VendorEntity, CashierEntity) -> Unit,
+    onDeleteVendor: (VendorEntity, CashierEntity) -> Unit
 ) {
     var showAddModal by remember { mutableStateOf(false) }
     var editingVendor by remember { mutableStateOf<VendorEntity?>(null) }
     var deletingVendor by remember { mutableStateOf<VendorEntity?>(null) }
+    var pendingVendorToSave by remember { mutableStateOf<VendorEntity?>(null) }
+    var pendingVendorToDelete by remember { mutableStateOf<VendorEntity?>(null) }
 
     val allVendorNames = remember(vendors) { vendors.map { it.name }.distinct() }
 
@@ -1590,13 +1708,13 @@ fun VendorsManagementTab(
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = Color(0xFFE3EFE9)
+                                    color = MaterialTheme.colorScheme.secondaryContainer
                                 ) {
                                     Text(
                                         text = "🚛 Truck Panel Route${if (vendor.routeSchedule.isNotBlank()) ": ${vendor.routeSchedule}" else ""}",
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF0B5E38),
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
@@ -1663,26 +1781,48 @@ fun VendorsManagementTab(
 
                     if (isTruckPanelInput) {
                         Text("Route Schedule Mode:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = routeScheduleType == "DAILY",
-                                onClick = { routeScheduleType = "DAILY" },
-                                label = { Text("Daily Route") },
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            FilterChip(
-                                selected = routeScheduleType == "SPECIFIC_DAYS",
-                                onClick = { routeScheduleType = "SPECIFIC_DAYS" },
-                                label = { Text("Specific Days (Mon - Sun)") },
-                                shape = RoundedCornerShape(10.dp)
-                            )
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(
+                                    selected = routeScheduleType == "DAILY",
+                                    onClick = { routeScheduleType = "DAILY" },
+                                    label = { Text("Daily") },
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                FilterChip(
+                                    selected = routeScheduleType == "SPECIFIC_DAYS",
+                                    onClick = { routeScheduleType = "SPECIFIC_DAYS" },
+                                    label = { Text("Weekly") },
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                FilterChip(
+                                    selected = routeScheduleType == "EVERY_2_WEEKS",
+                                    onClick = { routeScheduleType = "EVERY_2_WEEKS" },
+                                    label = { Text("Every 2 Weeks") },
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                FilterChip(
+                                    selected = routeScheduleType == "MONTHLY",
+                                    onClick = { routeScheduleType = "MONTHLY" },
+                                    label = { Text("Monthly") },
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                            }
                         }
 
-                        if (routeScheduleType == "DAILY") {
+                        if (routeScheduleType == "DAILY" || routeScheduleType == "EVERY_2_WEEKS" || routeScheduleType == "MONTHLY") {
                             OutlinedTextField(
                                 value = dailyRouteInput,
                                 onValueChange = { dailyRouteInput = it },
-                                label = { Text("Daily Route Schedule & Notes") },
+                                label = {
+                                    Text(
+                                        when (routeScheduleType) {
+                                            "EVERY_2_WEEKS" -> "Bi-Weekly Schedule Notes (e.g. Every 2nd Wed)"
+                                            "MONTHLY" -> "Monthly Schedule Notes (e.g. 1st Mon of Month)"
+                                            else -> "Daily Route Schedule & Notes"
+                                        }
+                                    )
+                                },
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true
@@ -1705,7 +1845,14 @@ fun VendorsManagementTab(
                 Button(
                     onClick = {
                         val finalSchedule = if (isTruckPanelInput) {
-                            if (routeScheduleType == "DAILY") dailyRouteInput else {
+                            if (routeScheduleType == "DAILY" || routeScheduleType == "EVERY_2_WEEKS" || routeScheduleType == "MONTHLY") {
+                                val prefix = when (routeScheduleType) {
+                                    "EVERY_2_WEEKS" -> "Every 2 Weeks"
+                                    "MONTHLY" -> "Monthly"
+                                    else -> "Daily"
+                                }
+                                if (dailyRouteInput.isNotBlank()) "$prefix: $dailyRouteInput" else prefix
+                            } else {
                                 listOfNotNull(
                                     if (monChecked) "Mon: ${monRoute.ifBlank { "Route" }}" else null,
                                     if (tueChecked) "Tue: ${tueRoute.ifBlank { "Route" }}" else null,
@@ -1732,9 +1879,14 @@ fun VendorsManagementTab(
                             routeSchedule = finalSchedule,
                             updatedAt = System.currentTimeMillis()
                         )
-                        onSaveVendor(vendorToSave)
-                        showAddModal = false
-                        editingVendor = null
+
+                        if (activeVerifiedCashier != null) {
+                            onSaveVendor(vendorToSave, activeVerifiedCashier)
+                            showAddModal = false
+                            editingVendor = null
+                        } else {
+                            pendingVendorToSave = vendorToSave
+                        }
                     },
                     enabled = nameInput.isNotBlank(),
                     shape = RoundedCornerShape(12.dp)
@@ -1762,8 +1914,12 @@ fun VendorsManagementTab(
             confirmButton = {
                 Button(
                     onClick = {
-                        onDeleteVendor(vendor)
-                        deletingVendor = null
+                        if (activeVerifiedCashier != null) {
+                            onDeleteVendor(vendor, activeVerifiedCashier)
+                            deletingVendor = null
+                        } else {
+                            pendingVendorToDelete = vendor
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     shape = RoundedCornerShape(12.dp)
@@ -1775,6 +1931,41 @@ fun VendorsManagementTab(
                 TextButton(onClick = { deletingVendor = null }) { Text("Cancel") }
             },
             shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    pendingVendorToSave?.let { vendor ->
+        val effectiveCashiers = remember(cashiers) {
+            if (cashiers.isEmpty()) listOf(CashierEntity(id = "default_owner", name = "Store Owner", pin = "0000")) else cashiers
+        }
+        CashierVerificationDialog(
+            cashiers = effectiveCashiers,
+            actionTitle = "Verify Cashier to Save Vendor '${vendor.name}'",
+            onDismiss = { pendingVendorToSave = null },
+            onVerified = { cashier ->
+                onCashierVerified(cashier)
+                onSaveVendor(vendor, cashier)
+                pendingVendorToSave = null
+                showAddModal = false
+                editingVendor = null
+            }
+        )
+    }
+
+    pendingVendorToDelete?.let { vendor ->
+        val effectiveCashiers = remember(cashiers) {
+            if (cashiers.isEmpty()) listOf(CashierEntity(id = "default_owner", name = "Store Owner", pin = "0000")) else cashiers
+        }
+        CashierVerificationDialog(
+            cashiers = effectiveCashiers,
+            actionTitle = "Verify Cashier to Delete Vendor '${vendor.name}'",
+            onDismiss = { pendingVendorToDelete = null },
+            onVerified = { cashier ->
+                onCashierVerified(cashier)
+                onDeleteVendor(vendor, cashier)
+                pendingVendorToDelete = null
+                deletingVendor = null
+            }
         )
     }
 }
@@ -2345,6 +2536,8 @@ fun MasterDataManagementTab(
     wholesaleUnits: List<WholesaleUnitEntity> = emptyList(),
     banRecords: List<BanRecordEntity>,
     cashiers: List<CashierEntity>,
+    activeVerifiedCashier: CashierEntity? = null,
+    onCashierVerified: (CashierEntity) -> Unit = {},
     onSaveMasterData: (type: String, name: String) -> Unit,
     onDeleteMasterData: (type: String, id: String) -> Unit,
     onSaveBanRecord: (BanRecordEntity, CashierEntity) -> Unit,
@@ -2363,10 +2556,10 @@ fun MasterDataManagementTab(
         Spacer(modifier = Modifier.height(12.dp))
 
         when (selectedDataTab) {
-            0 -> SimpleMasterDataSection("Category", categories.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
-            1 -> SimpleMasterDataSection("Brand", brands.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
-            2 -> SimpleMasterDataSection("Container", containers.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
-            3 -> SimpleMasterDataSection("WholesaleUnit", wholesaleUnits.map { it.id to it.name }, onSaveMasterData, onDeleteMasterData)
+            0 -> SimpleMasterDataSection("Category", categories.map { it.id to it.name }, cashiers, activeVerifiedCashier, onCashierVerified, onSaveMasterData, onDeleteMasterData)
+            1 -> SimpleMasterDataSection("Brand", brands.map { it.id to it.name }, cashiers, activeVerifiedCashier, onCashierVerified, onSaveMasterData, onDeleteMasterData)
+            2 -> SimpleMasterDataSection("Container", containers.map { it.id to it.name }, cashiers, activeVerifiedCashier, onCashierVerified, onSaveMasterData, onDeleteMasterData)
+            3 -> SimpleMasterDataSection("WholesaleUnit", wholesaleUnits.map { it.id to it.name }, cashiers, activeVerifiedCashier, onCashierVerified, onSaveMasterData, onDeleteMasterData)
         }
     }
 }
@@ -2446,10 +2639,14 @@ fun BanRecordsSection(
 fun SimpleMasterDataSection(
     typeLabel: String,
     itemsList: List<Pair<String, String>>,
+    cashiers: List<CashierEntity> = emptyList(),
+    activeVerifiedCashier: CashierEntity? = null,
+    onCashierVerified: (CashierEntity) -> Unit = {},
     onSave: (String, String) -> Unit,
     onDelete: (String, String) -> Unit
 ) {
     var nameInput by remember { mutableStateOf("") }
+    var pendingSaveName by remember { mutableStateOf<String?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2457,8 +2654,12 @@ fun SimpleMasterDataSection(
             Button(
                 onClick = {
                     if (nameInput.isNotBlank()) {
-                        onSave(typeLabel, nameInput)
-                        nameInput = ""
+                        if (activeVerifiedCashier != null) {
+                            onSave(typeLabel, nameInput)
+                            nameInput = ""
+                        } else {
+                            pendingSaveName = nameInput
+                        }
                     }
                 },
                 shape = RoundedCornerShape(12.dp)
@@ -2485,6 +2686,23 @@ fun SimpleMasterDataSection(
                 }
             }
         }
+    }
+
+    pendingSaveName?.let { nameToSave ->
+        val effectiveCashiers = remember(cashiers) {
+            if (cashiers.isEmpty()) listOf(CashierEntity(id = "default_owner", name = "Store Owner", pin = "0000")) else cashiers
+        }
+        CashierVerificationDialog(
+            cashiers = effectiveCashiers,
+            actionTitle = "Verify Cashier to Add $typeLabel '$nameToSave'",
+            onDismiss = { pendingSaveName = null },
+            onVerified = { cashier ->
+                onCashierVerified(cashier)
+                onSave(typeLabel, nameToSave)
+                pendingSaveName = null
+                nameInput = ""
+            }
+        )
     }
 }
 
