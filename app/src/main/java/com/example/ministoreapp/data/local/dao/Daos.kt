@@ -20,7 +20,6 @@ import com.example.ministoreapp.data.local.entities.PriceHistoryEntity
 import com.example.ministoreapp.data.local.entities.ProductEntity
 import com.example.ministoreapp.data.local.entities.ProductGroupEntity
 import com.example.ministoreapp.data.local.entities.SecuritySettingsEntity
-import com.example.ministoreapp.data.local.entities.StoreEntity
 import com.example.ministoreapp.data.local.entities.UnitEntity
 import com.example.ministoreapp.data.local.entities.VendorEntity
 import com.example.ministoreapp.data.local.entities.WholesaleUnitEntity
@@ -30,6 +29,9 @@ import kotlinx.coroutines.flow.Flow
 interface ProductGroupDao {
     @Query("SELECT * FROM product_groups ORDER BY baseName ASC")
     fun getAllGroupsFlow(): Flow<List<ProductGroupEntity>>
+
+    @Query("SELECT * FROM product_groups ORDER BY baseName ASC")
+    suspend fun getAllGroups(): List<ProductGroupEntity>
 
     @Query("SELECT * FROM product_groups WHERE id = :id")
     suspend fun getGroupById(id: String): ProductGroupEntity?
@@ -272,15 +274,6 @@ interface AuditLogDao {
 
 @Dao
 interface MasterDataDao {
-    @Query("SELECT * FROM stores ORDER BY name ASC")
-    fun getStoresFlow(): Flow<List<StoreEntity>>
-    @Query("SELECT * FROM stores ORDER BY name ASC")
-    suspend fun getStores(): List<StoreEntity>
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertStore(store: StoreEntity)
-    @Delete
-    suspend fun deleteStore(store: StoreEntity)
-
     @Query("SELECT * FROM categories ORDER BY name ASC")
     fun getCategoriesFlow(): Flow<List<CategoryEntity>>
     @Query("SELECT * FROM categories ORDER BY name ASC")

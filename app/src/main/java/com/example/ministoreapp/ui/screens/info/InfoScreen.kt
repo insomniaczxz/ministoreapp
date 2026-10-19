@@ -2,6 +2,7 @@ package com.example.ministoreapp.ui.screens.info
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -24,7 +25,6 @@ import com.example.ministoreapp.data.local.entities.CustomerEntity
 import com.example.ministoreapp.data.local.entities.PriceHistoryEntity
 import com.example.ministoreapp.data.local.entities.ProductEntity
 import com.example.ministoreapp.data.local.entities.SecuritySettingsEntity
-import com.example.ministoreapp.data.local.entities.StoreEntity
 import com.example.ministoreapp.data.local.entities.VendorEntity
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -46,7 +46,6 @@ data class StoreBulletinLogItem(
 fun InfoScreen(
     securitySettings: SecuritySettingsEntity?,
     priceHistory: List<PriceHistoryEntity>,
-    vendorStores: List<StoreEntity> = emptyList(),
     vendors: List<VendorEntity> = emptyList(),
     allProducts: List<ProductEntity> = emptyList(),
     banRecords: List<BanRecordEntity>,
@@ -55,13 +54,14 @@ fun InfoScreen(
     wholesaleProducts: List<ProductEntity> = emptyList()
 ) {
     var activeFilter by remember { mutableStateOf("ALL") }
+    var expandedLogId by remember { mutableStateOf<String?>(null) }
     var showVendorsDirectoryModal by remember { mutableStateOf(false) }
     var showBanListModal by remember { mutableStateOf(false) }
 
     val sevenDaysAgo = remember { System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L) }
 
     // Unified 7-Day Store Bulletin Logs List
-    val bulletinLogs = remember(priceHistory, vendors, vendorStores, banRecords, creditTransactions, customers) {
+    val bulletinLogs = remember(priceHistory, vendors, banRecords, creditTransactions, customers) {
         val list = mutableListOf<StoreBulletinLogItem>()
 
         // 1. Price Changes (Past 7 Days)
@@ -257,14 +257,20 @@ fun InfoScreen(
                 modifier = Modifier.weight(1f)
             ) {
                 items(filteredLogs, key = { it.id }) { log ->
+                    val isExpanded = expandedLogId == log.id
+
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                expandedLogId = if (isExpanded) null else log.id
+                            },
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = when (log.category) {
-                                "BAN" -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                                "PRICE" -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                "CREDIT" -> if (log.title.contains("CREDIT (UTANG)")) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f) else Color(0xFFE3EFE9)
+                                "BAN" -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+                                "PRICE" -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                                "CREDIT" -> if (log.title.contains("CREDIT (UTANG)")) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f) else Color(0xFFE3EFE9)
                                 else -> MaterialTheme.colorScheme.surfaceContainerLow
                             }
                         ),
@@ -274,17 +280,17 @@ fun InfoScreen(
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.Top
                             ) {
                                 Text(
                                     text = log.title,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    modifier = Modifier.weight(1f)
                                 )
+
+                                Spacer(modifier = Modifier.width(8.dp))
 
                                 Text(
                                     text = dateFormat.format(Date(log.timestamp)),
@@ -293,7 +299,7 @@ fun InfoScreen(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
 
                             Text(
                                 text = log.subtitle,
@@ -312,6 +318,32 @@ fun InfoScreen(
                                     )
                                 }
                             }
+
+                            if (isExpanded) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                Text(
+                                    text = "Performer: ${log.performer}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                Text(
+                                    text = "Logged: ${dateFormat.format(Date(log.timestamp))}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = if (isExpanded) "▲ Tap to collapse" else "▼ Tap to view details",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                modifier = Modifier.align(Alignment.End)
+                            )
                         }
                     }
                 }

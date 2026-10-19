@@ -93,7 +93,7 @@ fun CashierVerificationDialog(
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDropdown) },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
-                                .menuAnchor()
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                                 .fillMaxWidth(),
                             label = { Text("Cashier Name") }
                         )

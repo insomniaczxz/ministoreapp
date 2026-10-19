@@ -13,7 +13,7 @@ data class ProductGroupEntity(
     val variants: String = "",
     val brand: String = "",
     val category: String = "",
-    val storeName: String = "",
+    val vendorName: String = "", // Vendor / Supplier Name (e.g. Coke Panel)
     val unitSize: String = "",
     val containerType: String = "",
     val hasWholesale: Boolean = false,
@@ -37,7 +37,9 @@ data class ProductGroupEntity(
     val excludedKeys: String = "", // Comma-separated list of comboKey strings excluded/deleted
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    val storeName: String get() = vendorName
+}
 
 @Entity(tableName = "products")
 data class ProductEntity(
@@ -50,7 +52,7 @@ data class ProductEntity(
     val brand: String = "",
     val unit: String = "",
     val unitSize: String = "",
-    val storeName: String = "",
+    val vendorName: String = "", // Supplier / Vendor Name
     val cost: Double = 0.0,
     val markupType: String = "FIXED", // "PERCENTAGE", "FIXED", "MANUAL"
     val markupValue: Double = 0.0,
@@ -64,7 +66,9 @@ data class ProductEntity(
     val variantType: String? = null, // e.g. "WHOLESALE", "RETAIL", "COLD_RETAIL", "COLD_WHOLESALE", or variant tag
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    val storeName: String get() = vendorName
+}
 
 @Entity(tableName = "cashiers")
 data class CashierEntity(
@@ -88,6 +92,7 @@ data class SecuritySettingsEntity(
     val securityPin: String = "526375", // 6-digit PIN
     val pinOnAppLaunchEnabled: Boolean = true,
     val pinOnSettingsOpeningEnabled: Boolean = true,
+    val isDarkMode: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis()
 )
 
@@ -126,29 +131,28 @@ data class BanRecordEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val fullName: String,
     val nickname: String = "",
-    val reason: String = "",
-    val createdAt: Long = System.currentTimeMillis(),
+    val reason: String,
     val cashierId: String,
     val cashierName: String,
+    val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "events")
 data class EventEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
-    val timestamp: Long = System.currentTimeMillis(),
-    val type: String, // "BUY", "INFO", "FUND_TRANSFER"
-    val description: String = "",
+    val type: String, // "BUY", "FUND_TRANSFER", "TASK", "INFO"
+    val description: String,
     val cost: Double = 0.0,
     val quantity: Int = 1,
     val total: Double = 0.0,
     val details: String = "",
-    val transferType: String? = null,
+    val transferType: String? = null, // e.g. "CASH TO GCASH", "GCASH TO CASH"
     val isSettled: Boolean = false,
-    val settlementTimestamp: Long? = null,
     val settlementCashierId: String? = null,
     val settlementCashierName: String? = null,
     val settlementNote: String? = null,
+    val timestamp: Long = System.currentTimeMillis(),
     val cashierId: String,
     val cashierName: String,
     val updatedAt: Long = System.currentTimeMillis()
@@ -157,12 +161,11 @@ data class EventEntity(
 @Entity(tableName = "order_items")
 data class RestockItemEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
-    val productId: String? = null,
-    val productName: String,
+    val name: String,
     val cost: Double = 0.0,
     val sellingPrice: Double = 0.0,
     val quantity: Int = 1,
-    val storeName: String = "",
+    val isWholesale: Boolean = false,
     val unit: String = "",
     val unitSize: String = "",
     val createdAt: Long = System.currentTimeMillis(),
@@ -192,14 +195,6 @@ data class AuditLogEntity(
     val description: String,
     val cashierId: String,
     val cashierName: String,
-    val updatedAt: Long = System.currentTimeMillis()
-)
-
-@Entity(tableName = "stores")
-data class StoreEntity(
-    @PrimaryKey val id: String = UUID.randomUUID().toString(),
-    val name: String,
-    val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
 
@@ -246,7 +241,7 @@ data class WholesaleUnitEntity(
 @Entity(tableName = "vendors")
 data class VendorEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
-    val name: String, // Name / Company Name
+    val name: String,
     val ownerName: String = "",
     val productsSold: String = "",
     val address: String = "",
@@ -255,7 +250,7 @@ data class VendorEntity(
     val agentContactNumber: String = "",
     val isTruckPanel: Boolean = false,
     val routeScheduleType: String = "DAILY", // "DAILY" or "SPECIFIC_DAYS"
-    val routeSchedule: String = "",
+    val routeSchedule: String = "", // e.g. "Mon: Route | Wed: Route"
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

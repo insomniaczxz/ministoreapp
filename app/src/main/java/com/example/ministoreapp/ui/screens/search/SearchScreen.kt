@@ -22,7 +22,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -223,12 +222,10 @@ fun SearchScreen(
             onDismiss = { selectedVariantForRestock = null },
             onConfirmRestock = { selectedProduct, qty ->
                 val restockItem = RestockItemEntity(
-                    productId = selectedProduct.id,
-                    productName = selectedProduct.name,
+                    name = selectedProduct.name,
                     cost = selectedProduct.cost,
                     sellingPrice = selectedProduct.sellingPrice,
                     quantity = qty,
-                    storeName = selectedProduct.storeName,
                     unit = selectedProduct.unit,
                     unitSize = selectedProduct.unitSize
                 )

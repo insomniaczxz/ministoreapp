@@ -21,15 +21,15 @@ object RecommendationEngine {
     ): StoreRecommendationResult? {
         if (restockItems.isEmpty()) return null
 
-        // Group products by non-empty storeName
+        // Group products by non-empty vendorName
         val storeProductsMap = allProducts
-            .filter { it.storeName.isNotBlank() }
-            .groupBy { it.storeName }
+            .filter { it.vendorName.isNotBlank() }
+            .groupBy { it.vendorName }
 
         if (storeProductsMap.isEmpty()) {
             // Fallback to default costs in restock items
             val defaultTotal = restockItems.sumOf { it.cost * it.quantity }
-            val primaryStore = restockItems.map { it.storeName }.firstOrNull { it.isNotBlank() } ?: "Default Store"
+            val primaryStore = "Default Vendor"
             return StoreRecommendationResult(
                 recommendedStoreName = primaryStore,
                 totalCost = defaultTotal,
@@ -44,8 +44,7 @@ object RecommendationEngine {
             for (item in restockItems) {
                 // Find matching product in this store
                 val matchInStore = storeProducts.find { 
-                    (item.productId != null && it.id == item.productId) ||
-                    it.name.equals(item.productName, ignoreCase = true)
+                    it.name.equals(item.name, ignoreCase = true)
                 }
                 val unitCost = matchInStore?.cost ?: item.cost
                 storeTotalCost += unitCost * item.quantity

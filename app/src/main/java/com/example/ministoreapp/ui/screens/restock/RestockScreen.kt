@@ -318,7 +318,7 @@ fun RestockItemCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = item.productName,
+                    text = item.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -346,24 +346,6 @@ fun RestockItemCard(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                }
-
-                if (item.storeName.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Store,
-                            contentDescription = "Vendor",
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.secondary
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = item.storeName,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
                 }
             }
 
@@ -432,7 +414,7 @@ fun generateRestockListText(items: List<RestockItemEntity>, totalCost: Double): 
     sb.appendLine("Date: ${dateFormat.format(Date())}")
     sb.appendLine("---------------------------")
     for (item in items) {
-        sb.appendLine("${item.productName} - Qty: ${item.quantity} x ₱${item.cost.roundToInt()} = ₱${(item.cost * item.quantity).roundToInt()}")
+        sb.appendLine("${item.name} - Qty: ${item.quantity} x ₱${item.cost.roundToInt()} = ₱${(item.cost * item.quantity).roundToInt()}")
     }
     sb.appendLine("---------------------------")
     sb.appendLine("TOTAL RESTOCK COST: ₱${totalCost.roundToInt()}")

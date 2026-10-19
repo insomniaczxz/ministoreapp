@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import androidx.core.content.FileProvider
+import com.example.ministoreapp.util.NetworkUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -43,7 +44,8 @@ object AppUpdateManager {
                 readTimeout = 10000
             }
 
-            if (connection.responseCode == 200) {
+            val code = connection.responseCode
+            if (code == 200) {
                 val jsonString = connection.inputStream.bufferedReader().use { it.readText() }
                 val json = JSONObject(jsonString)
 
@@ -76,13 +78,13 @@ object AppUpdateManager {
                         rawTagName = rawTag
                     )
                 )
-            } else if (connection.responseCode == 404) {
+            } else if (code == 404) {
                 Result.failure(Exception("No GitHub releases published yet for repo '$owner/$repo'."))
             } else {
-                Result.failure(Exception("GitHub API returned HTTP ${connection.responseCode}"))
+                Result.failure(Exception("GitHub API returned HTTP $code"))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(Exception(NetworkUtils.getFriendlyErrorMessage(e), e))
         }
     }
 
@@ -113,6 +115,11 @@ object AppUpdateManager {
                 readTimeout = 15000
             }
 
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                return@withContext Result.failure(Exception("Server returned HTTP $code when downloading update."))
+            }
+
             val totalSize = connection.contentLength
             val apkFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "update.apk")
 
@@ -140,7 +147,7 @@ object AppUpdateManager {
 
             Result.success(apkFile)
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(Exception(NetworkUtils.getFriendlyErrorMessage(e), e))
         }
     }
 

@@ -31,10 +31,10 @@ import com.example.ministoreapp.data.local.entities.PriceHistoryEntity
 import com.example.ministoreapp.data.local.entities.ProductEntity
 import com.example.ministoreapp.data.local.entities.ProductGroupEntity
 import com.example.ministoreapp.data.local.entities.SecuritySettingsEntity
-import com.example.ministoreapp.data.local.entities.StoreEntity
 import com.example.ministoreapp.data.local.entities.UnitEntity
 import com.example.ministoreapp.data.local.entities.VendorEntity
 import com.example.ministoreapp.data.local.entities.WholesaleUnitEntity
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -53,7 +53,6 @@ import java.util.concurrent.Executors
         RestockItemEntity::class,
         PriceHistoryEntity::class,
         AuditLogEntity::class,
-        StoreEntity::class,
         CategoryEntity::class,
         BrandEntity::class,
         UnitEntity::class,
@@ -93,26 +92,26 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME
                 )
-                .addCallback(object : Callback() {
-                    override fun onCreate(db: SupportSQLiteDatabase) {
-                        super.onCreate(db)
-                        Executors.newSingleThreadExecutor().execute {
-                            val database = getInstance(context)
-                            kotlinx.coroutines.runBlocking {
-                                database.securitySettingsDao().insertOrUpdate(
-                                    SecuritySettingsEntity(
-                                        id = "default",
-                                        storeName = "StoreName Sari-Sari and Wholesale",
-                                        securityPin = "526375",
-                                        pinOnAppLaunchEnabled = true,
-                                        pinOnSettingsOpeningEnabled = true
+                    .addCallback(object : Callback() {
+                        override fun onCreate(db: SupportSQLiteDatabase) {
+                            super.onCreate(db)
+                            Executors.newSingleThreadExecutor().execute {
+                                val database = getInstance(context)
+                                runBlocking {
+                                    database.securitySettingsDao().insertOrUpdate(
+                                        SecuritySettingsEntity(
+                                            id = "default",
+                                            storeName = "StoreName Sari-Sari and Wholesale",
+                                            securityPin = "526375",
+                                            pinOnAppLaunchEnabled = true,
+                                            pinOnSettingsOpeningEnabled = true
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
-                    }
-                })
-                .fallbackToDestructiveMigration()
+                    })
+                    .fallbackToDestructiveMigration(false)
                 .build()
                 INSTANCE = instance
                 instance

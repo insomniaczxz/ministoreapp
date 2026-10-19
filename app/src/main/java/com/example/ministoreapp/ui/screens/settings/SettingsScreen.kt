@@ -60,7 +60,6 @@ import com.example.ministoreapp.data.local.entities.ContainerEntity
 import com.example.ministoreapp.data.local.entities.ProductEntity
 import com.example.ministoreapp.data.local.entities.ProductGroupEntity
 import com.example.ministoreapp.data.local.entities.SecuritySettingsEntity
-import com.example.ministoreapp.data.local.entities.StoreEntity
 import com.example.ministoreapp.data.local.entities.UnitEntity
 import com.example.ministoreapp.data.local.entities.VendorEntity
 import com.example.ministoreapp.data.local.entities.WholesaleUnitEntity
@@ -83,7 +82,6 @@ fun SettingsScreen(
     cashiers: List<CashierEntity>,
     auditLogs: List<AuditLogEntity>,
     banRecords: List<BanRecordEntity>,
-    stores: List<StoreEntity>,
     categories: List<CategoryEntity>,
     brands: List<BrandEntity>,
     units: List<UnitEntity>,
@@ -106,6 +104,7 @@ fun SettingsScreen(
     onExportBackupJson: () -> String = { "" },
     onImportBackupJson: (String) -> Unit = {},
     onSwitchGoogleAccount: () -> Unit = {},
+    googleAccountEmail: String? = null,
     onUpdateSecuritySettings: (SecuritySettingsEntity) -> Unit
 ) {
     val currentSettings = securitySettings ?: SecuritySettingsEntity()
@@ -126,7 +125,6 @@ fun SettingsScreen(
                         products = products,
                         productGroups = productGroups,
                         cashiers = cashiers,
-                        stores = stores,
                         categories = categories,
                         brands = brands,
                         units = units,
@@ -145,12 +143,10 @@ fun SettingsScreen(
                     )
                     "VENDORS" -> VendorsManagementTab(
                         vendors = vendors,
-                        stores = stores,
                         onSaveVendor = onSaveVendor,
                         onDeleteVendor = onDeleteVendor
                     )
                     "DROPDOWNS" -> MasterDataManagementTab(
-                        stores = stores,
                         categories = categories,
                         brands = brands,
                         units = units,
@@ -168,7 +164,7 @@ fun SettingsScreen(
                         onUpdateSecuritySettings = onUpdateSecuritySettings
                     )
                     "BAN_LIST" -> BanRecordsSection(banRecords, cashiers, onSaveBanRecord, onDeleteBanRecord)
-                    "SYNC" -> SyncBackupPlaceholder(securitySettings, onExportBackupJson, onImportBackupJson, onSwitchGoogleAccount)
+                    "SYNC" -> SyncBackupPlaceholder(securitySettings, googleAccountEmail, onExportBackupJson, onImportBackupJson, onSwitchGoogleAccount)
                     "AUDIT_LOGS" -> AuditLogsTab(auditLogs = auditLogs)
                     "STORE_PROFILE" -> StoreProfileManagementTab(
                         securitySettings = securitySettings,
@@ -208,7 +204,7 @@ fun SettingsScreen(
                 item {
                     SettingsTileRow(
                         title = "Vendors",
-                        subtitle = "${vendors.size.let { if (it > 0) it else stores.size }} suppliers & truck panel routes",
+                        subtitle = "${vendors.size} suppliers & truck panel routes",
                         icon = Icons.Default.Store,
                         onClick = { onActiveDetailViewChange("VENDORS") }
                     )
@@ -433,7 +429,6 @@ fun ProductsManagementTab(
     products: List<ProductEntity>,
     productGroups: List<ProductGroupEntity> = emptyList(),
     cashiers: List<CashierEntity>,
-    stores: List<StoreEntity>,
     categories: List<CategoryEntity>,
     brands: List<BrandEntity>,
     units: List<UnitEntity>,
@@ -546,7 +541,7 @@ fun ProductsManagementTab(
                                     aliases = product.aliases,
                                     brand = product.brand,
                                     category = product.category,
-                                    storeName = product.storeName,
+                                    vendorName = product.vendorName,
                                     unitSize = product.unitSize,
                                     containerType = product.unit
                                 )
@@ -630,7 +625,6 @@ fun ProductsManagementTab(
         AddProductDialog(
             existingGroup = editingProductGroup,
             cashiers = cashiers,
-            stores = stores,
             categories = categories,
             brands = brands,
             units = units,
@@ -980,7 +974,6 @@ fun buildProductNames(baseName: String, variantsInput: String): List<String> {
 fun AddProductDialog(
     existingGroup: ProductGroupEntity? = null,
     cashiers: List<CashierEntity>,
-    stores: List<StoreEntity>,
     categories: List<CategoryEntity>,
     brands: List<BrandEntity>,
     units: List<UnitEntity>,
@@ -994,7 +987,7 @@ fun AddProductDialog(
     var aliases by remember { mutableStateOf(existingGroup?.aliases ?: "") }
     var brand by remember { mutableStateOf(existingGroup?.brand ?: "") }
     var category by remember { mutableStateOf(existingGroup?.category ?: "") }
-    var storeName by remember { mutableStateOf(existingGroup?.storeName ?: "") }
+    var storeName by remember { mutableStateOf(existingGroup?.vendorName ?: existingGroup?.storeName ?: "") }
     var unitSize by remember { mutableStateOf(existingGroup?.unitSize ?: "") }
     var containerType by remember { mutableStateOf(existingGroup?.containerType ?: "") }
     var variantsInput by remember { mutableStateOf(existingGroup?.variants ?: "") }
@@ -1029,7 +1022,7 @@ fun AddProductDialog(
     val containerSuggestions = remember(containers, units) { (containers.map { it.name } + units.map { it.name }).distinct() }
     // Wholesale Unit suggestions loaded ONLY from Wholesale Units created in Settings > Dropdown Options
     val wholesaleUnitSuggestions = remember(wholesaleUnits) { wholesaleUnits.map { it.name }.distinct() }
-    val storeSuggestions = remember(vendors, stores) { (vendors.map { it.name } + stores.map { it.name }).distinct() }
+    val storeSuggestions = remember(vendors) { vendors.map { it.name }.distinct() }
 
     // Computed Values
     val wholesaleCost = wholesaleCostInput.toDoubleOrNull() ?: 0.0
@@ -1222,7 +1215,7 @@ fun AddProductDialog(
                         AutoCompletableOutlinedTextField(value = category, onValueChange = { category = it }, label = "Category", suggestions = categorySuggestions, modifier = Modifier.weight(1f))
                     }
 
-                    AutoCompletableOutlinedTextField(value = storeName, onValueChange = { storeName = it }, label = "Vendor Store (Supplied By)", suggestions = storeSuggestions)
+                    AutoCompletableOutlinedTextField(value = storeName, onValueChange = { storeName = it }, label = "Vendor / Supplier (e.g. Coke Panel)", suggestions = storeSuggestions)
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(value = unitSize, onValueChange = { unitSize = it }, label = { Text("Unit Size (1L / 65g)") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f), singleLine = true)
@@ -1433,7 +1426,7 @@ fun AddProductDialog(
                     variants = variantsInput,
                     brand = brand,
                     category = category,
-                    storeName = storeName,
+                    vendorName = storeName,
                     unitSize = unitSize,
                     containerType = containerType,
                     hasWholesale = hasWholesale,
@@ -1471,7 +1464,7 @@ fun AddProductDialog(
                         brand = brand,
                         unit = item.unit,
                         unitSize = item.unitSize,
-                        storeName = storeName,
+                        vendorName = storeName,
                         cost = item.cost,
                         sellingPrice = finalPrice,
                         isBeverage = isBeverage,
@@ -1504,7 +1497,6 @@ fun AddProductDialog(
 @Composable
 fun VendorsManagementTab(
     vendors: List<VendorEntity>,
-    stores: List<StoreEntity>,
     onSaveVendor: (VendorEntity) -> Unit,
     onDeleteVendor: (VendorEntity) -> Unit
 ) {
@@ -1512,11 +1504,7 @@ fun VendorsManagementTab(
     var editingVendor by remember { mutableStateOf<VendorEntity?>(null) }
     var deletingVendor by remember { mutableStateOf<VendorEntity?>(null) }
 
-    val allVendorNames = remember(vendors, stores) {
-        val list = vendors.map { it.name }.toMutableList()
-        stores.map { it.name }.filter { !list.contains(it) }.forEach { list.add(it) }
-        list
-    }
+    val allVendorNames = remember(vendors) { vendors.map { it.name }.distinct() }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -1539,7 +1527,7 @@ fun VendorsManagementTab(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        if (vendors.isEmpty() && stores.isEmpty()) {
+        if (vendors.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("No vendors registered.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -2350,7 +2338,6 @@ fun StoreProfileManagementTab(
 
 @Composable
 fun MasterDataManagementTab(
-    stores: List<StoreEntity>,
     categories: List<CategoryEntity>,
     brands: List<BrandEntity>,
     units: List<UnitEntity>,
@@ -2529,6 +2516,7 @@ fun AuditLogsTab(auditLogs: List<AuditLogEntity>) {
 @Composable
 fun SyncBackupPlaceholder(
     securitySettings: SecuritySettingsEntity?,
+    googleAccountEmail: String? = null,
     onExportBackupJson: () -> String = { "" },
     onImportBackupJson: (String) -> Unit = {},
     onSwitchGoogleAccount: () -> Unit = {}
@@ -2537,7 +2525,12 @@ fun SyncBackupPlaceholder(
     val clipboardManager = LocalClipboardManager.current
     val prefs = remember { context.getSharedPreferences("ministore_prefs", android.content.Context.MODE_PRIVATE) }
 
-    var googleAccountEmail by remember { mutableStateOf(prefs.getString("google_account_email", null) ?: "Not linked") }
+    val lastAccount = remember(context) { com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(context) }
+    val displayEmail = googleAccountEmail
+        ?: prefs.getString("google_account_email", null)
+        ?: lastAccount?.email
+        ?: lastAccount?.displayName
+        ?: "Not linked"
 
     // Sync Preferences State
     var syncSettingsEnabled by remember { mutableStateOf(prefs.getBoolean("sync_settings_enabled", true)) }
@@ -2590,7 +2583,7 @@ fun SyncBackupPlaceholder(
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Google Account Sync", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Text("Linked Account: $googleAccountEmail", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                Text("Linked Account: $displayEmail", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
 
                 Button(
                     onClick = onSwitchGoogleAccount,
@@ -2605,7 +2598,7 @@ fun SyncBackupPlaceholder(
             }
         }
 
-        // Card 2: Sync Toggles
+        // Card 2: Sync Controls
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
@@ -2613,37 +2606,23 @@ fun SyncBackupPlaceholder(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Cloud Sync Preferences", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("Cloud Sync Controls", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
 
-                SyncSwitchRow("Sync Settings & PIN Security", syncSettingsEnabled) {
-                    syncSettingsEnabled = it
-                    prefs.edit().putBoolean("sync_settings_enabled", it).apply()
-                }
-
-                SyncSwitchRow("Require PIN to Execute Cloud Sync", syncRequirePin) {
+                SyncSwitchRow("Require Cashier / PIN Verification to Sync", syncRequirePin) {
                     syncRequirePin = it
                     prefs.edit().putBoolean("sync_require_pin", it).apply()
                 }
 
-                SyncSwitchRow("Sync Products & Recipe Calculator", syncProductsEnabled) {
-                    syncProductsEnabled = it
-                    prefs.edit().putBoolean("sync_products_enabled", it).apply()
+                SyncSwitchRow("Create Pre-Sync Local Safety Snapshot", syncSettingsEnabled) {
+                    syncSettingsEnabled = it
+                    prefs.edit().putBoolean("sync_settings_enabled", it).apply()
                 }
 
-                SyncSwitchRow("Sync Customer Credit & Debt Records", syncCreditEnabled) {
-                    syncCreditEnabled = it
-                    prefs.edit().putBoolean("sync_credit_enabled", it).apply()
-                }
-
-                SyncSwitchRow("Sync Events & Store Notes", syncEventsEnabled) {
-                    syncEventsEnabled = it
-                    prefs.edit().putBoolean("sync_events_enabled", it).apply()
-                }
-
-                SyncSwitchRow("Sync Restock & Order Items", syncRestockEnabled) {
-                    syncRestockEnabled = it
-                    prefs.edit().putBoolean("sync_restock_enabled", it).apply()
-                }
+                Text(
+                    text = "Note: Cloud Sync transfers 100% of your store's products, cashiers, PINs, vendors, credits, and settings for an exact multi-device match.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
@@ -2816,6 +2795,10 @@ fun AboutAppPlaceholder() {
 
                 Button(
                     onClick = {
+                        if (!com.example.ministoreapp.util.NetworkUtils.isNetworkAvailable(context)) {
+                            statusDialogMessage = "No internet connection available. Please check your network and try again."
+                            return@Button
+                        }
                         isCheckingUpdates = true
                         coroutineScope.launch {
                             val result = AppUpdateManager.checkForUpdates(
@@ -2827,7 +2810,8 @@ fun AboutAppPlaceholder() {
                                 val info = result.getOrNull()!!
                                 releaseInfo = info
                             } else {
-                                statusDialogMessage = "Update Check Result:\n\n${result.exceptionOrNull()?.message ?: "Unable to connect to GitHub"}\n\nRunning version v${AppUpdateManager.CURRENT_VERSION}."
+                                val errMsg = com.example.ministoreapp.util.NetworkUtils.getFriendlyErrorMessage(result.exceptionOrNull())
+                                statusDialogMessage = "Update Check Result:\n\n$errMsg\n\nRunning version v${AppUpdateManager.CURRENT_VERSION}."
                             }
                         }
                     },
