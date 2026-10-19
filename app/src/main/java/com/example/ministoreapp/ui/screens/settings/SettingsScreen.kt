@@ -339,7 +339,7 @@ fun SettingsScreen(
                 item {
                     SettingsTileRow(
                         title = "About + Update App",
-                        subtitle = "Ministoreapp v${AppUpdateManager.CURRENT_VERSION} · Check for Updates",
+                        subtitle = "SariSync v${AppUpdateManager.CURRENT_VERSION} · Check for Updates",
                         icon = Icons.Default.Info,
                         onClick = { onActiveDetailViewChange("ABOUT") }
                     )
@@ -3005,7 +3005,7 @@ fun AboutAppPlaceholder() {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Ministoreapp", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text("SariSync", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 Text("Powered by James Lasquite", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Current Version: v${AppUpdateManager.getCurrentVersion(context)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
 

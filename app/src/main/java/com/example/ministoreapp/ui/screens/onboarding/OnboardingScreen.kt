@@ -103,7 +103,7 @@ fun OnboardingScreen(
                             }
 
                             Text(
-                                text = "Welcome to MiniStoreApp",
+                                text = "Welcome to SariSync",
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
