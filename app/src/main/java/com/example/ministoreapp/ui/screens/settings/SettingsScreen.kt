@@ -3021,7 +3021,8 @@ fun AboutAppPlaceholder() {
                         coroutineScope.launch {
                             val result = AppUpdateManager.checkForUpdates(
                                 owner = "insomniaczxz",
-                                repo = "ministoreapp"
+                                repo = "ministoreapp",
+                                currentVersion = AppUpdateManager.getCurrentVersion(context)
                             )
                             isCheckingUpdates = false
                             if (result.isSuccess) {
@@ -3029,7 +3030,7 @@ fun AboutAppPlaceholder() {
                                 releaseInfo = info
                             } else {
                                 val errMsg = com.example.ministoreapp.util.NetworkUtils.getFriendlyErrorMessage(result.exceptionOrNull())
-                                statusDialogMessage = "Update Check Result:\n\n$errMsg\n\nRunning version v${AppUpdateManager.CURRENT_VERSION}."
+                                statusDialogMessage = "Update Check Result:\n\n$errMsg\n\nRunning version v${AppUpdateManager.getCurrentVersion(context)}."
                             }
                         }
                     },
@@ -3084,7 +3085,7 @@ fun AboutAppPlaceholder() {
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Latest Release: v${info.version} (Current: v${AppUpdateManager.CURRENT_VERSION})", fontWeight = FontWeight.SemiBold)
+                    Text("Latest Release: v${info.version} (Current: v${AppUpdateManager.getCurrentVersion(context)})", fontWeight = FontWeight.SemiBold)
                     if (info.releaseNotes.isNotBlank()) {
                         Text("Changelog:\n${info.releaseNotes}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
