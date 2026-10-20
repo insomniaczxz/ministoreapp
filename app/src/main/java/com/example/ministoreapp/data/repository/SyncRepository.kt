@@ -87,21 +87,22 @@ class SyncRepository(private val db: AppDatabase) {
             // 2. Parse incoming changeset
             val incoming = gson.fromJson(jsonString, DatabaseChangeset::class.java) ?: return@withContext Result.failure(Exception("Invalid changeset format"))
 
-            // 3. Merge Security Settings & Store Profile (Preserving local device Dark Theme preference)
+            // 3. Merge Security Settings & Store Profile
             val prefs = context.getSharedPreferences("ministore_prefs", Context.MODE_PRIVATE)
-            val currentLocalTheme = prefs.getBoolean("dark_theme_enabled", false)
 
             if (incoming.securitySettings != null) {
                 val localSettings = db.securitySettingsDao().getSettings()
                 if (localSettings == null || forceOverwrite || incoming.securitySettings.updatedAt >= localSettings.updatedAt) {
                     val settingsToSave = if (forceOverwrite) {
-                        incoming.securitySettings.copy(isDarkMode = currentLocalTheme, updatedAt = System.currentTimeMillis())
+                        incoming.securitySettings.copy(isDarkMode = incoming.isDarkMode, updatedAt = System.currentTimeMillis())
                     } else {
-                        incoming.securitySettings.copy(isDarkMode = currentLocalTheme)
+                        incoming.securitySettings.copy(isDarkMode = incoming.isDarkMode)
                     }
                     db.securitySettingsDao().insertOrUpdate(settingsToSave)
-                    prefs.edit().putBoolean("dark_theme_enabled", currentLocalTheme).apply()
+                    prefs.edit().putBoolean("dark_theme_enabled", incoming.isDarkMode).apply()
                 }
+            } else {
+                prefs.edit().putBoolean("dark_theme_enabled", incoming.isDarkMode).apply()
             }
 
             // 5. Merge Cashiers & PINs

@@ -18,10 +18,13 @@ if (versionPropsFile.canRead()) {
     versionProps["VERSION_CODE"] = "4"
 }
 
-// Only increment when actually building a Release APK for GitHub (not during Debug/Run/Sync)
+// Check if current build tasks target a release build or version increment
 val isBuildingApk = gradle.startParameter.taskNames.any { task ->
     task.contains("assembleRelease", ignoreCase = true) ||
-    task.contains("bundleRelease", ignoreCase = true)
+    task.contains("bundleRelease", ignoreCase = true) ||
+    task.contains("incrementVersion", ignoreCase = true) ||
+    task.equals("assemble", ignoreCase = true) ||
+    task.endsWith(":assemble", ignoreCase = true)
 }
 
 var vMajor = versionProps["VERSION_MAJOR"].toString().toInt()
@@ -65,6 +68,11 @@ android {
     buildTypes {
         getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
+        }
+        getByName("release") {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -111,4 +119,22 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+}
+
+tasks.register("incrementVersion") {
+    description = "Increments VERSION_PATCH and VERSION_CODE in version.properties"
+    group = "versioning"
+    doLast {
+        val propFile = file("version.properties")
+        if (propFile.canRead()) {
+            val props = Properties()
+            propFile.inputStream().use { props.load(it) }
+            val currentPatch = props["VERSION_PATCH"].toString().toIntOrNull() ?: 0
+            val currentCode = props["VERSION_CODE"].toString().toIntOrNull() ?: 0
+            props["VERSION_PATCH"] = (currentPatch + 1).toString()
+            props["VERSION_CODE"] = (currentCode + 1).toString()
+            propFile.outputStream().use { props.store(it, "Updated by incrementVersion task") }
+            println("Version updated to: ${props["VERSION_MAJOR"]}.${props["VERSION_MINOR"]}.${props["VERSION_PATCH"]} (Code: ${props["VERSION_CODE"]})")
+        }
+    }
 }

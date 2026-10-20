@@ -22,11 +22,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.ministoreapp.data.local.entities.ProductEntity
+import com.example.ministoreapp.data.local.entities.ProductGroupEntity
 import com.example.ministoreapp.data.local.entities.RestockItemEntity
 import kotlin.math.roundToInt
 
@@ -53,6 +56,7 @@ fun extractCleanVariantTitle(name: String): String {
 @Composable
 fun SearchScreen(
     products: List<ProductEntity>,
+    productGroups: List<ProductGroupEntity> = emptyList(),
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onAddToOrder: (RestockItemEntity) -> Unit
@@ -115,7 +119,7 @@ fun SearchScreen(
         }
     }
 
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
     Column(
         modifier = Modifier
@@ -205,6 +209,7 @@ fun SearchScreen(
                 items(filteredVariantGroups, key = { it.key }) { variantGroup ->
                     VariantSearchCard(
                         group = variantGroup,
+                        productGroups = productGroups,
                         onRestockClick = { selectedVariantForRestock = variantGroup }
                     )
                 }
@@ -245,9 +250,14 @@ fun SearchScreen(
 @Composable
 fun VariantSearchCard(
     group: VariantGroupModel,
+    productGroups: List<ProductGroupEntity> = emptyList(),
     onRestockClick: () -> Unit
 ) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val firstOpt = group.priceOptions.firstOrNull()
+    val parentGroup = remember(firstOpt, productGroups) {
+        productGroups.find { it.id == firstOpt?.groupId }
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -263,39 +273,21 @@ fun VariantSearchCard(
                 .fillMaxWidth()
                 .padding(12.dp)
         ) {
-            // Header Row: Title & Restock Button
+            // Header Row: Title & Restock Button (Vendor Info Removed)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = group.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    if (group.storeName.isNotBlank()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Store,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = MaterialTheme.colorScheme.secondary
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = group.storeName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
-                    }
-                }
+                Text(
+                    text = group.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
 
                 Spacer(modifier = Modifier.width(8.dp))
 
@@ -321,9 +313,10 @@ fun VariantSearchCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Price Badges Row (Sorted: Cold Retail -> Retail -> Cold Case -> Case)
-            val sortedOptions = remember(group.priceOptions) {
-                group.priceOptions.sortedBy { option ->
+            // Price Badges Row (Separated Retail & Bundle Tags, Doubled Size)
+            val badges = remember(group.priceOptions, parentGroup) {
+                val list = mutableListOf<Triple<String, String, String>>() // icon, label, variantType key
+                val sorted = group.priceOptions.sortedBy { option ->
                     when (option.variantType) {
                         "COLD_RETAIL" -> 1
                         "RETAIL" -> 2
@@ -332,6 +325,22 @@ fun VariantSearchCard(
                         else -> 5
                     }
                 }
+                for (option in sorted) {
+                    when (option.variantType) {
+                        "WHOLESALE" -> list.add(Triple("📦", "₱${option.sellingPrice.roundToInt()} (${option.unit.ifBlank { "Case" }})", "WHOLESALE"))
+                        "COLD_WHOLESALE" -> list.add(Triple("🧊", "₱${option.sellingPrice.roundToInt()} (Cold Case)", "COLD_WHOLESALE"))
+                        "COLD_RETAIL" -> list.add(Triple("❄️", "₱${option.sellingPrice.roundToInt()} (Cold)", "COLD_RETAIL"))
+                        else -> {
+                            if (parentGroup != null && parentGroup.bundlePrice > 0) {
+                                list.add(Triple("📦", "${parentGroup.bundleQty} for ₱${parentGroup.bundlePrice.roundToInt()} (Bundle)", "BUNDLE"))
+                                list.add(Triple("🏷️", "₱${option.sellingPrice.roundToInt()} / pc", "RETAIL"))
+                            } else {
+                                list.add(Triple("🏷️", "₱${option.sellingPrice.roundToInt()}", "RETAIL"))
+                            }
+                        }
+                    }
+                }
+                list
             }
 
             LazyRow(
@@ -339,30 +348,51 @@ fun VariantSearchCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                items(sortedOptions) { option ->
-                    val (badgeIcon, badgeLabel) = when (option.variantType) {
-                        "WHOLESALE" -> Pair("📦", "₱${option.sellingPrice.roundToInt()} (${option.unit.ifBlank { "Case" }})")
-                        "COLD_WHOLESALE" -> Pair("🧊", "₱${option.sellingPrice.roundToInt()} (Cold Case)")
-                        "COLD_RETAIL" -> Pair("❄️", "₱${option.sellingPrice.roundToInt()} (Cold)")
-                        else -> Pair("🏷️", "₱${option.sellingPrice.roundToInt()} (${option.unit.ifBlank { "Bottle" }})")
+                items(badges) { (badgeIcon, badgeLabel, badgeType) ->
+                    val (bgFill, borderCol, textCol) = when (badgeType) {
+                        "COLD_RETAIL" -> if (isDark) {
+                            Triple(Color(0xFF38BDF8).copy(alpha = 0.15f), Color(0xFF38BDF8).copy(alpha = 0.75f), Color(0xFF7DD3FC))
+                        } else {
+                            Triple(Color(0xFF0284C7).copy(alpha = 0.12f), Color(0xFF0284C7).copy(alpha = 0.65f), Color(0xFF0369A1))
+                        }
+                        "COLD_WHOLESALE" -> if (isDark) {
+                            Triple(Color(0xFF818CF8).copy(alpha = 0.16f), Color(0xFF818CF8).copy(alpha = 0.80f), Color(0xFFA5B4FC))
+                        } else {
+                            Triple(Color(0xFF6366F1).copy(alpha = 0.12f), Color(0xFF6366F1).copy(alpha = 0.65f), Color(0xFF4338CA))
+                        }
+                        "BUNDLE" -> if (isDark) {
+                            Triple(Color(0xFF4ADE80).copy(alpha = 0.15f), Color(0xFF4ADE80).copy(alpha = 0.75f), Color(0xFF86EFAC))
+                        } else {
+                            Triple(Color(0xFF22C55E).copy(alpha = 0.14f), Color(0xFF16A34A).copy(alpha = 0.65f), Color(0xFF15803D))
+                        }
+                        "WHOLESALE" -> if (isDark) {
+                            Triple(Color(0xFFFACC15).copy(alpha = 0.15f), Color(0xFFFACC15).copy(alpha = 0.75f), Color(0xFFFDE047))
+                        } else {
+                            Triple(Color(0xFFEAB308).copy(alpha = 0.16f), Color(0xFFD97706).copy(alpha = 0.65f), Color(0xFFB45309))
+                        }
+                        else -> if (isDark) { // RETAIL
+                            Triple(Color(0xFFFFFFFF).copy(alpha = 0.06f), Color(0xFF49454F), Color(0xFFF3F4F6))
+                        } else {
+                            Triple(Color(0xFF000000).copy(alpha = 0.05f), Color(0xFFCAC4D0), Color(0xFF111827))
+                        }
                     }
 
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else androidx.compose.ui.graphics.Color(0xFFF8FAFC),
-                        border = BorderStroke(1.dp, if (isDark) MaterialTheme.colorScheme.outlineVariant else androidx.compose.ui.graphics.Color(0xFFE2E8F0))
+                        shape = RoundedCornerShape(10.dp),
+                        color = bgFill,
+                        border = BorderStroke(1.dp, borderCol)
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(badgeIcon, style = MaterialTheme.typography.labelSmall)
+                            Text(badgeIcon, style = MaterialTheme.typography.bodyMedium)
                             Text(
                                 text = badgeLabel,
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = textCol
                             )
                         }
                     }

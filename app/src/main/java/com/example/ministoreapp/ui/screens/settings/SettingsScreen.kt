@@ -97,8 +97,8 @@ fun SettingsScreen(
     onDeleteCashier: (CashierEntity, performerName: String, reason: String) -> Unit,
     onSaveBanRecord: (BanRecordEntity, CashierEntity) -> Unit,
     onDeleteBanRecord: (BanRecordEntity, CashierEntity) -> Unit,
-    onSaveMasterData: (type: String, name: String) -> Unit,
-    onDeleteMasterData: (type: String, id: String) -> Unit,
+    onSaveMasterData: (type: String, name: String, cashier: CashierEntity) -> Unit,
+    onDeleteMasterData: (type: String, id: String, name: String, cashier: CashierEntity) -> Unit,
     onSaveVendor: (VendorEntity, CashierEntity) -> Unit = { _, _ -> },
     onDeleteVendor: (VendorEntity, CashierEntity) -> Unit = { _, _ -> },
     onExportBackupJson: () -> String = { "" },
@@ -663,10 +663,12 @@ fun ProductsManagementTab(
                 showAddProductDialog = false
                 editingProductGroup = null
             },
-            onSaveGroup = { group, generatedItems, cashier ->
+            onSaveGroup = { group, generatedItems, cashier, isDiffSize ->
                 onSaveProductGroup(group, generatedItems, cashier)
-                showAddProductDialog = false
-                editingProductGroup = null
+                if (!isDiffSize) {
+                    showAddProductDialog = false
+                    editingProductGroup = null
+                }
             }
         )
     }
@@ -1031,9 +1033,24 @@ fun AddProductDialog(
     activeVerifiedCashier: CashierEntity? = null,
     onCashierVerified: (CashierEntity) -> Unit = {},
     onDismiss: () -> Unit,
-    onSaveGroup: (group: ProductGroupEntity, generatedItems: List<ProductEntity>, cashier: CashierEntity) -> Unit
+    onSaveGroup: (group: ProductGroupEntity, generatedItems: List<ProductEntity>, cashier: CashierEntity, isDiffSize: Boolean) -> Unit
 ) {
     var baseName by remember { mutableStateOf(existingGroup?.baseName ?: "") }
+
+    // Track the persistent group ID and base name tracking for Diff Size saves
+    val persistentGroupId = remember { mutableStateOf(existingGroup?.id ?: UUID.randomUUID().toString()) }
+    var lastSavedBaseName by remember { mutableStateOf(existingGroup?.baseName ?: "") }
+
+    LaunchedEffect(baseName) {
+        val cleanCurrent = baseName.trim()
+        val cleanLast = lastSavedBaseName.trim()
+        if (cleanLast.isNotBlank() && cleanCurrent.isNotBlank() && !cleanCurrent.equals(cleanLast, ignoreCase = true)) {
+            persistentGroupId.value = UUID.randomUUID().toString()
+            lastSavedBaseName = cleanCurrent
+        } else if (cleanLast.isBlank() && cleanCurrent.isNotBlank()) {
+            lastSavedBaseName = cleanCurrent
+        }
+    }
     var aliases by remember { mutableStateOf(existingGroup?.aliases ?: "") }
     var brand by remember { mutableStateOf(existingGroup?.brand ?: "") }
     var category by remember { mutableStateOf(existingGroup?.category ?: "") }
@@ -1189,31 +1206,42 @@ fun AddProductDialog(
             // 2. Retail Single Piece or Tingi Bundle
             if (hasRetail) {
                 val pieceUnitText = containerType.ifBlank { "pcs" }
-                val comboKey = "${name}_main_reg"
 
-                val finalRetailLabel = if (hasBundle && bQty > 1 && bPrice > 0) {
-                    if (retailSellingPrice > 0) "$name$sizePackagingText ($bQty for ₱${bPrice.roundToInt()} or ₱${retailSellingPrice.roundToInt()} ea)"
-                    else "$name$sizePackagingText ($bQty for ₱${bPrice.roundToInt()})"
-                } else {
-                    "$name$sizePackagingText (1 $pieceUnitText)"
-                }
-
-                val finalRetailPrice = if (hasBundle && bQty > 1 && bPrice > 0) bPrice else retailSellingPrice
-
+                // Add Retail Base (1 Piece)
+                val retailComboKey = "${name}_main_reg"
                 list.add(
                     PreviewItem(
-                        comboKey = comboKey,
-                        displayName = finalRetailLabel,
+                        comboKey = retailComboKey,
+                        displayName = "$name$sizePackagingText (1 $pieceUnitText)",
                         unitSize = unitSize,
                         unit = pieceUnitText,
                         cost = computedRetailCost,
-                        defaultSellingPrice = finalRetailPrice,
+                        defaultSellingPrice = retailSellingPrice,
                         variantType = "RETAIL",
                         isWholesale = false,
                         itemsPerPack = 1,
-                        isCheckedState = mutableStateOf(!excludedKeysList.contains(comboKey))
+                        isCheckedState = mutableStateOf(!excludedKeysList.contains(retailComboKey))
                     )
                 )
+
+                // Add Tingi Bundle Price if defined and not identical to single piece
+                if (hasBundle && bPrice > 0 && !(bQty == 1 && bPrice == retailSellingPrice)) {
+                    val bundleComboKey = "${name}_bundle"
+                    list.add(
+                        PreviewItem(
+                            comboKey = bundleComboKey,
+                            displayName = "$name$sizePackagingText ($bQty for ₱${bPrice.roundToInt()})",
+                            unitSize = unitSize,
+                            unit = pieceUnitText,
+                            cost = computedRetailCost * bQty,
+                            defaultSellingPrice = bPrice,
+                            variantType = "RETAIL",
+                            isWholesale = false,
+                            itemsPerPack = bQty,
+                            isCheckedState = mutableStateOf(!excludedKeysList.contains(bundleComboKey))
+                        )
+                    )
+                }
 
                 if (isBeverage && coldRetailPrice > 0) {
                     val coldComboKey = "${name}_main_cold"
@@ -1347,7 +1375,7 @@ fun AddProductDialog(
                                     }
                                     val bQty = bundleQtyInput.toIntOrNull() ?: 1
                                     val bPrice = bundlePriceInput.toDoubleOrNull() ?: 0.0
-                                    if (bQty > 1 && bPrice > 0 && computedRetailCost > 0) {
+                                    if (bQty >= 1 && bPrice > 0 && computedRetailCost > 0) {
                                         val bundleCost = computedRetailCost * bQty
                                         val profit = bPrice - bundleCost
                                         Text("Cost for $bQty pcs: ₱${bundleCost.roundToInt()} ➔ Profit: +₱${profit.roundToInt()}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -1456,7 +1484,7 @@ fun AddProductDialog(
         )
     } else {
         if (activeVerifiedCashier != null) {
-            val sharedGroupId = existingGroup?.id ?: UUID.randomUUID().toString()
+            val sharedGroupId = persistentGroupId.value
             val uncheckedKeys = previewItems.filter { !it.isCheckedState.value }.map { it.comboKey }
             val excludedKeysString = uncheckedKeys.joinToString(",")
 
@@ -1517,15 +1545,19 @@ fun AddProductDialog(
                 )
             }
 
-            onSaveGroup(groupRecord, generatedEntities, activeVerifiedCashier)
+            onSaveGroup(groupRecord, generatedEntities, activeVerifiedCashier, pendingSaveMode == "DIFF_SIZE")
 
             if (pendingSaveMode == "DIFF_SIZE") {
+                lastSavedBaseName = baseName
+                // Keep the exact same ID so next size registers under the same group!
                 unitSize = ""
                 containerType = ""
                 wholesaleCostInput = ""
                 retailCostInput = ""
                 wholesaleManualPriceInput = ""
                 retailMarkupInput = ""
+                bundleQtyInput = ""
+                bundlePriceInput = ""
                 pendingSaveMode = null
             } else {
                 pendingSaveMode = null
@@ -1541,7 +1573,7 @@ fun AddProductDialog(
                 onDismiss = { pendingSaveMode = null },
                 onVerified = { cashier ->
                     onCashierVerified(cashier)
-                    val sharedGroupId = existingGroup?.id ?: UUID.randomUUID().toString()
+                    val sharedGroupId = persistentGroupId.value
 
                     val uncheckedKeys = previewItems.filter { !it.isCheckedState.value }.map { it.comboKey }
                     val excludedKeysString = uncheckedKeys.joinToString(",")
@@ -1603,15 +1635,19 @@ fun AddProductDialog(
                         )
                     }
 
-                    onSaveGroup(groupRecord, generatedEntities, cashier)
+                    onSaveGroup(groupRecord, generatedEntities, cashier, pendingSaveMode == "DIFF_SIZE")
 
                     if (pendingSaveMode == "DIFF_SIZE") {
+                        lastSavedBaseName = baseName
+                        // Keep the exact same ID so next size registers under the same group!
                         unitSize = ""
                         containerType = ""
                         wholesaleCostInput = ""
                         retailCostInput = ""
                         wholesaleManualPriceInput = ""
                         retailMarkupInput = ""
+                        bundleQtyInput = ""
+                        bundlePriceInput = ""
                         pendingSaveMode = null
                     } else {
                         pendingSaveMode = null
@@ -2554,8 +2590,8 @@ fun MasterDataManagementTab(
     cashiers: List<CashierEntity>,
     activeVerifiedCashier: CashierEntity? = null,
     onCashierVerified: (CashierEntity) -> Unit = {},
-    onSaveMasterData: (type: String, name: String) -> Unit,
-    onDeleteMasterData: (type: String, id: String) -> Unit,
+    onSaveMasterData: (type: String, name: String, cashier: CashierEntity) -> Unit,
+    onDeleteMasterData: (type: String, id: String, name: String, cashier: CashierEntity) -> Unit,
     onSaveBanRecord: (BanRecordEntity, CashierEntity) -> Unit,
     onDeleteBanRecord: (BanRecordEntity, CashierEntity) -> Unit
 ) {
@@ -2658,11 +2694,12 @@ fun SimpleMasterDataSection(
     cashiers: List<CashierEntity> = emptyList(),
     activeVerifiedCashier: CashierEntity? = null,
     onCashierVerified: (CashierEntity) -> Unit = {},
-    onSave: (String, String) -> Unit,
-    onDelete: (String, String) -> Unit
+    onSave: (String, String, CashierEntity) -> Unit,
+    onDelete: (String, String, String, CashierEntity) -> Unit
 ) {
     var nameInput by remember { mutableStateOf("") }
     var pendingSaveName by remember { mutableStateOf<String?>(null) }
+    var pendingDeletePair by remember { mutableStateOf<Pair<String, String>?>(null) } // (id, name)
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2671,7 +2708,7 @@ fun SimpleMasterDataSection(
                 onClick = {
                     if (nameInput.isNotBlank()) {
                         if (activeVerifiedCashier != null) {
-                            onSave(typeLabel, nameInput)
+                            onSave(typeLabel, nameInput, activeVerifiedCashier)
                             nameInput = ""
                         } else {
                             pendingSaveName = nameInput
@@ -2695,7 +2732,13 @@ fun SimpleMasterDataSection(
                 ) {
                     Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(text = item.second, fontWeight = FontWeight.Bold)
-                        IconButton(onClick = { onDelete(typeLabel, item.first) }) {
+                        IconButton(onClick = {
+                            if (activeVerifiedCashier != null) {
+                                onDelete(typeLabel, item.first, item.second, activeVerifiedCashier)
+                            } else {
+                                pendingDeletePair = item
+                            }
+                        }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                         }
                     }
@@ -2714,9 +2757,25 @@ fun SimpleMasterDataSection(
             onDismiss = { pendingSaveName = null },
             onVerified = { cashier ->
                 onCashierVerified(cashier)
-                onSave(typeLabel, nameToSave)
+                onSave(typeLabel, nameToSave, cashier)
                 pendingSaveName = null
                 nameInput = ""
+            }
+        )
+    }
+
+    pendingDeletePair?.let { (id, name) ->
+        val effectiveCashiers = remember(cashiers) {
+            if (cashiers.isEmpty()) listOf(CashierEntity(id = "default_owner", name = "Store Owner", pin = "0000")) else cashiers
+        }
+        CashierVerificationDialog(
+            cashiers = effectiveCashiers,
+            actionTitle = "Verify Cashier to Delete $typeLabel '$name'",
+            onDismiss = { pendingDeletePair = null },
+            onVerified = { cashier ->
+                onCashierVerified(cashier)
+                onDelete(typeLabel, id, name, cashier)
+                pendingDeletePair = null
             }
         )
     }
