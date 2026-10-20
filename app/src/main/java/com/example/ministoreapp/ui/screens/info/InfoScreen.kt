@@ -63,7 +63,8 @@ fun InfoScreen(
     banRecords: List<BanRecordEntity>,
     creditTransactions: List<CreditTransactionEntity> = emptyList(),
     customers: List<CustomerEntity> = emptyList(),
-    wholesaleProducts: List<ProductEntity> = emptyList()
+    wholesaleProducts: List<ProductEntity> = emptyList(),
+    auditLogs: List<com.example.ministoreapp.data.local.entities.AuditLogEntity> = emptyList()
 ) {
     var activeFilter by remember { mutableStateOf("ALL") }
     var expandedLogId by remember { mutableStateOf<String?>(null) }
@@ -73,7 +74,7 @@ fun InfoScreen(
     val sevenDaysAgo = remember { System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L) }
 
     // Unified 7-Day Store Bulletin Logs List
-    val bulletinLogs = remember(priceHistory, vendors, banRecords, creditTransactions, customers) {
+    val bulletinLogs = remember(priceHistory, vendors, banRecords, creditTransactions, customers, auditLogs) {
         val list = mutableListOf<StoreBulletinLogItem>()
 
         // 1. Price Changes (Past 7 Days)
@@ -106,6 +107,9 @@ fun InfoScreen(
                 if (routeText.isNotBlank()) routeText else null
             )
 
+            val logEntry = auditLogs.find { it.actionType == "SAVE_VENDOR" && it.description.contains(v.name, ignoreCase = true) }
+            val resolvedPerformer = logEntry?.cashierName ?: "System"
+
             list.add(
                 StoreBulletinLogItem(
                     id = "v_${v.id}",
@@ -114,7 +118,7 @@ fun InfoScreen(
                     subtitle = if (v.contactNumber.isNotBlank()) "Contact: ${v.contactNumber}" else "Vendor Supplier Profile",
                     detailsList = details,
                     timestamp = v.updatedAt,
-                    performer = "System"
+                    performer = resolvedPerformer
                 )
             )
         }
@@ -475,21 +479,23 @@ fun InfoScreen(
             OutlinedButton(
                 onClick = { showVendorsDirectoryModal = true },
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
             ) {
                 Icon(Icons.Default.Store, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("All Vendors Directory", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text("All Vendors Directory", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
 
             OutlinedButton(
                 onClick = { showBanListModal = true },
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
             ) {
                 Icon(Icons.Default.Block, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Full Ban List", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                Text("Full Ban List", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

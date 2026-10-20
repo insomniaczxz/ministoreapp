@@ -613,6 +613,7 @@ class MainActivity : ComponentActivity() {
                 when (currentTab) {
                     TabScreen.Search -> SearchScreen(
                         products = products,
+                        productGroups = productGroups,
                         searchQuery = searchQuery,
                         onSearchQueryChange = { searchQuery = it },
                         onAddToOrder = { restockItem ->
@@ -769,7 +770,8 @@ class MainActivity : ComponentActivity() {
                         banRecords = banRecords,
                         creditTransactions = creditTransactions,
                         customers = customers,
-                        wholesaleProducts = products.filter { it.isWholesaleParent }
+                        wholesaleProducts = products.filter { it.isWholesaleParent },
+                        auditLogs = auditLogs
                     )
                     TabScreen.Settings -> SettingsScreen(
                         activeDetailView = activeSettingsDetailView,
@@ -797,48 +799,111 @@ class MainActivity : ComponentActivity() {
                         },
                         onSaveProductGroup = { group, generatedItems, cashier ->
                             lifecycleScope.launch {
-                                // Auto-register any newly typed master data & vendors
+                                // Auto-register any newly typed master data & vendors with audit logs
                                 if (group.category.isNotBlank() && db.masterDataDao().getCategories().none { it.name.equals(group.category, ignoreCase = true) }) {
                                     db.masterDataDao().insertCategory(com.example.ministoreapp.data.local.entities.CategoryEntity(name = group.category))
+                                    db.auditLogDao().insertAuditLog(
+                                        AuditLogEntity(
+                                            cashierId = cashier.id,
+                                            cashierName = cashier.name,
+                                            actionType = "SAVE_MASTER_DATA",
+                                            description = "Added Category '${group.category}' (via Product Group)"
+                                        )
+                                    )
                                 }
                                 if (group.brand.isNotBlank() && db.masterDataDao().getBrands().none { it.name.equals(group.brand, ignoreCase = true) }) {
                                     db.masterDataDao().insertBrand(com.example.ministoreapp.data.local.entities.BrandEntity(name = group.brand))
+                                    db.auditLogDao().insertAuditLog(
+                                        AuditLogEntity(
+                                            cashierId = cashier.id,
+                                            cashierName = cashier.name,
+                                            actionType = "SAVE_MASTER_DATA",
+                                            description = "Added Brand '${group.brand}' (via Product Group)"
+                                        )
+                                    )
                                 }
                                 if (group.containerType.isNotBlank() && db.masterDataDao().getContainers().none { it.name.equals(group.containerType, ignoreCase = true) }) {
                                     db.masterDataDao().insertContainer(com.example.ministoreapp.data.local.entities.ContainerEntity(name = group.containerType))
+                                    db.auditLogDao().insertAuditLog(
+                                        AuditLogEntity(
+                                            cashierId = cashier.id,
+                                            cashierName = cashier.name,
+                                            actionType = "SAVE_MASTER_DATA",
+                                            description = "Added Container '${group.containerType}' (via Product Group)"
+                                        )
+                                    )
                                 }
                                 if (group.wholesaleUnit.isNotBlank() && db.masterDataDao().getWholesaleUnits().none { it.name.equals(group.wholesaleUnit, ignoreCase = true) }) {
                                     db.masterDataDao().insertWholesaleUnit(com.example.ministoreapp.data.local.entities.WholesaleUnitEntity(name = group.wholesaleUnit))
+                                    db.auditLogDao().insertAuditLog(
+                                        AuditLogEntity(
+                                            cashierId = cashier.id,
+                                            cashierName = cashier.name,
+                                            actionType = "SAVE_MASTER_DATA",
+                                            description = "Added WholesaleUnit '${group.wholesaleUnit}' (via Product Group)"
+                                        )
+                                    )
                                 }
                                 if (group.vendorName.isNotBlank() && db.masterDataDao().getVendors().none { it.name.equals(group.vendorName, ignoreCase = true) }) {
                                     db.masterDataDao().insertVendor(com.example.ministoreapp.data.local.entities.VendorEntity(name = group.vendorName))
+                                    db.auditLogDao().insertAuditLog(
+                                        AuditLogEntity(
+                                            cashierId = cashier.id,
+                                            cashierName = cashier.name,
+                                            actionType = "SAVE_VENDOR",
+                                            description = "Saved vendor/supplier '${group.vendorName}' (via Product Group)"
+                                        )
+                                    )
                                 }
                                 generatedItems.forEach { prod ->
                                     if (prod.unit.isNotBlank() && db.masterDataDao().getUnits().none { it.name.equals(prod.unit, ignoreCase = true) }) {
                                         db.masterDataDao().insertUnit(com.example.ministoreapp.data.local.entities.UnitEntity(name = prod.unit))
+                                        db.auditLogDao().insertAuditLog(
+                                            AuditLogEntity(
+                                                cashierId = cashier.id,
+                                                cashierName = cashier.name,
+                                                actionType = "SAVE_MASTER_DATA",
+                                                description = "Added Unit '${prod.unit}' (via Product Group)"
+                                            )
+                                        )
                                     }
                                 }
 
                                 db.productGroupDao().insertGroup(group)
 
                                 val oldProducts = db.productDao().getAllProducts().filter { it.groupId == group.id }
+                                val oldProductMap = oldProducts.associateBy { it.comboKey }
+
                                 oldProducts.forEach { old ->
-                                    val priceDiff = generatedItems.find { it.comboKey == old.comboKey }?.sellingPrice?.minus(old.sellingPrice) ?: 0.0
-                                    if (kotlin.math.abs(priceDiff) >= 0.01) {
-                                        db.priceHistoryDao().insertPriceHistory(
-                                            PriceHistoryEntity(
-                                                productId = old.id,
-                                                productName = old.name,
-                                                oldPrice = old.sellingPrice,
-                                                newPrice = old.sellingPrice + priceDiff,
-                                                cashierId = cashier.id,
-                                                cashierName = cashier.name
+                                    val newItem = generatedItems.find { it.comboKey == old.comboKey }
+                                    if (newItem != null) {
+                                        val priceDiff = newItem.sellingPrice - old.sellingPrice
+                                        if (kotlin.math.abs(priceDiff) >= 0.01) {
+                                            db.priceHistoryDao().insertPriceHistory(
+                                                PriceHistoryEntity(
+                                                    productId = old.id,
+                                                    productName = old.name,
+                                                    oldPrice = old.sellingPrice,
+                                                    newPrice = newItem.sellingPrice,
+                                                    cashierId = cashier.id,
+                                                    cashierName = cashier.name
+                                                )
                                             )
-                                        )
+                                        }
+                                    } else {
+                                        db.productDao().deleteProduct(old)
                                     }
                                 }
 
-                                generatedItems.forEach { db.productDao().insertProduct(it) }
+                                generatedItems.forEach { prod ->
+                                    val old = oldProductMap[prod.comboKey]
+                                    val productToSave = if (old != null) {
+                                        prod.copy(id = old.id)
+                                    } else {
+                                        prod
+                                    }
+                                    db.productDao().insertProduct(productToSave)
+                                }
 
                                 val displayTitle = formatGroupDisplayTitle(group.baseName, group.variants, group.unitSize, group.containerType)
                                 db.auditLogDao().insertAuditLog(
@@ -935,7 +1000,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         },
-                        onSaveMasterData = { type, name ->
+                        onSaveMasterData = { type, name, cashier ->
                             lifecycleScope.launch {
                                 when (type) {
                                     "Category" -> db.masterDataDao().insertCategory(com.example.ministoreapp.data.local.entities.CategoryEntity(name = name))
@@ -944,17 +1009,33 @@ class MainActivity : ComponentActivity() {
                                     "Container" -> db.masterDataDao().insertContainer(com.example.ministoreapp.data.local.entities.ContainerEntity(name = name))
                                     "WholesaleUnit" -> db.masterDataDao().insertWholesaleUnit(com.example.ministoreapp.data.local.entities.WholesaleUnitEntity(name = name))
                                 }
+                                db.auditLogDao().insertAuditLog(
+                                    AuditLogEntity(
+                                        cashierId = cashier.id,
+                                        cashierName = cashier.name,
+                                        actionType = "SAVE_MASTER_DATA",
+                                        description = "Added $type '$name'"
+                                    )
+                                )
                             }
                         },
-                        onDeleteMasterData = { type, id ->
+                        onDeleteMasterData = { type, id, name, cashier ->
                             lifecycleScope.launch {
                                 when (type) {
-                                    "Category" -> db.masterDataDao().deleteCategory(com.example.ministoreapp.data.local.entities.CategoryEntity(id = id, name = ""))
-                                    "Brand" -> db.masterDataDao().deleteBrand(com.example.ministoreapp.data.local.entities.BrandEntity(id = id, name = ""))
-                                    "Unit" -> db.masterDataDao().deleteUnit(com.example.ministoreapp.data.local.entities.UnitEntity(id = id, name = ""))
-                                    "Container" -> db.masterDataDao().deleteContainer(com.example.ministoreapp.data.local.entities.ContainerEntity(id = id, name = ""))
-                                    "WholesaleUnit" -> db.masterDataDao().deleteWholesaleUnit(com.example.ministoreapp.data.local.entities.WholesaleUnitEntity(id = id, name = ""))
+                                    "Category" -> db.masterDataDao().deleteCategory(com.example.ministoreapp.data.local.entities.CategoryEntity(id = id, name = name))
+                                    "Brand" -> db.masterDataDao().deleteBrand(com.example.ministoreapp.data.local.entities.BrandEntity(id = id, name = name))
+                                    "Unit" -> db.masterDataDao().deleteUnit(com.example.ministoreapp.data.local.entities.UnitEntity(id = id, name = name))
+                                    "Container" -> db.masterDataDao().deleteContainer(com.example.ministoreapp.data.local.entities.ContainerEntity(id = id, name = name))
+                                    "WholesaleUnit" -> db.masterDataDao().deleteWholesaleUnit(com.example.ministoreapp.data.local.entities.WholesaleUnitEntity(id = id, name = name))
                                 }
+                                db.auditLogDao().insertAuditLog(
+                                    AuditLogEntity(
+                                        cashierId = cashier.id,
+                                        cashierName = cashier.name,
+                                        actionType = "DELETE_MASTER_DATA",
+                                        description = "Deleted $type '$name'"
+                                    )
+                                )
                             }
                         },
                         onUpdateSecuritySettings = { updatedSettings ->
