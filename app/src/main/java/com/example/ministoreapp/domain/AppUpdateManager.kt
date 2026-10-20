@@ -36,18 +36,19 @@ object AppUpdateManager {
         }
     }
 
-    suspend fun checkForUpdates(
+    suspend fun fetchLatestRelease(
         context: Context,
         owner: String = defaultOwner,
-        repo: String = defaultRepo,
-        currentVersion: String = getCurrentVersion(context)
+        repo: String = defaultRepo
     ): Result<AppReleaseInfo> = withContext(Dispatchers.IO) {
         try {
             val urlString = "https://api.github.com/repos/$owner/$repo/releases/latest"
             val url = URL(urlString)
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                setRequestProperty("Accept", "application/vnd.github.v3+json")
+                instanceFollowRedirects = true
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("User-Agent", "SariCloud-Android-App")
                 connectTimeout = 10000
                 readTimeout = 10000
             }
@@ -62,26 +63,29 @@ object AppUpdateManager {
                 val notes = json.optString("body", "No release notes provided.")
                 val assets = json.optJSONArray("assets")
 
-                var apkUrl: String? = null
+                var apkUrl = json.optString("html_url", "")
                 if (assets != null) {
                     for (i in 0 until assets.length()) {
                         val asset = assets.getJSONObject(i)
                         val name = asset.optString("name", "")
                         if (name.endsWith(".apk", ignoreCase = true)) {
-                            apkUrl = asset.optString("browser_download_url", "")
-                            if (apkUrl.isBlank()) apkUrl = null
-                            break
+                            val dlUrl = asset.optString("browser_download_url", "")
+                            if (dlUrl.isNotBlank()) {
+                                apkUrl = dlUrl
+                                break
+                            }
                         }
                     }
                 }
 
+                val currentVersion = getCurrentVersion(context)
                 val hasUpdate = isVersionNewer(cleanTag, currentVersion)
 
                 Result.success(
                     AppReleaseInfo(
                         version = if (cleanTag.isNotBlank()) cleanTag else "1.0.0",
                         releaseNotes = notes,
-                        downloadUrl = apkUrl,
+                        downloadUrl = apkUrl.ifBlank { null },
                         hasUpdate = hasUpdate,
                         rawTagName = rawTag
                     )

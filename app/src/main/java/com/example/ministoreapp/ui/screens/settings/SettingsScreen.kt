@@ -337,9 +337,25 @@ fun SettingsScreen(
 
                 // 11. About + Update App
                 item {
+                    val context = LocalContext.current
+                    val installedVersion = remember { AppUpdateManager.getCurrentVersion(context) }
+                    var latestGithubVersion by remember { mutableStateOf("Checking...") }
+                    var downloadUrl by remember { mutableStateOf<String?>(null) }
+                    
+                    LaunchedEffect(Unit) {
+                        val result = AppUpdateManager.fetchLatestRelease(context)
+                        if (result.isSuccess) {
+                            val info = result.getOrNull()!!
+                            latestGithubVersion = info.version
+                            downloadUrl = info.downloadUrl
+                        } else {
+                            latestGithubVersion = "Error (${result.exceptionOrNull()?.message ?: "Unknown"})"
+                        }
+                    }
+
                     SettingsTileRow(
                         title = "About + Update App",
-                        subtitle = "SariSync v${AppUpdateManager.getCurrentVersion(LocalContext.current)} · Check for Updates",
+                        subtitle = "Installed: v$installedVersion • GitHub Latest: v$latestGithubVersion",
                         icon = Icons.Default.Info,
                         onClick = { onActiveDetailViewChange("ABOUT") }
                     )
@@ -3005,7 +3021,7 @@ fun AboutAppPlaceholder() {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("SariSync", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text("SariCloud", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 Text("Powered by James Lasquite", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Current Version: v${AppUpdateManager.getCurrentVersion(LocalContext.current)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
 
@@ -3019,7 +3035,7 @@ fun AboutAppPlaceholder() {
                         }
                         isCheckingUpdates = true
                         coroutineScope.launch {
-                            val result = AppUpdateManager.checkForUpdates(
+                            val result = AppUpdateManager.fetchLatestRelease(
                                 context = context,
                                 owner = "insomniaczxz",
                                 repo = "ministoreapp"

@@ -103,7 +103,7 @@ fun OnboardingScreen(
                             }
 
                             Text(
-                                text = "Welcome to SariSync",
+                                text = "Welcome to SariCloud",
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,

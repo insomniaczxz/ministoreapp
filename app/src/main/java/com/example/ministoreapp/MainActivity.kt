@@ -132,9 +132,7 @@ class MainActivity : ComponentActivity() {
 
         val context = androidx.compose.ui.platform.LocalContext.current
 
-        LaunchedEffect(Unit) {
-            com.example.ministoreapp.util.UpdateChecker.checkForUpdates(context)
-        }
+        com.example.ministoreapp.util.AppUpdateCheckerHost()
 
         // Live States from Database Flows
         val securitySettings by db.securitySettingsDao().getSettingsFlow().collectAsState(initial = null)

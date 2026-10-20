@@ -1,8 +1,43 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
+
+val versionPropsFile = file("version.properties")
+val versionProps = Properties()
+
+if (versionPropsFile.canRead()) {
+    versionPropsFile.inputStream().use { versionProps.load(it) }
+} else {
+    versionProps["VERSION_MAJOR"] = "1"
+    versionProps["VERSION_MINOR"] = "2"
+    versionProps["VERSION_PATCH"] = "4"
+    versionProps["VERSION_CODE"] = "4"
+}
+
+// Only increment when actually building a Release APK for GitHub (not during Debug/Run/Sync)
+val isBuildingApk = gradle.startParameter.taskNames.any { task ->
+    task.contains("assembleRelease", ignoreCase = true) ||
+    task.contains("bundleRelease", ignoreCase = true)
+}
+
+var vMajor = versionProps["VERSION_MAJOR"].toString().toInt()
+var vMinor = versionProps["VERSION_MINOR"].toString().toInt()
+var vPatch = versionProps["VERSION_PATCH"].toString().toInt()
+var vCode = versionProps["VERSION_CODE"].toString().toInt()
+
+if (isBuildingApk) {
+    vPatch += 1
+    vCode += 1
+    versionProps["VERSION_PATCH"] = vPatch.toString()
+    versionProps["VERSION_CODE"] = vCode.toString()
+    versionPropsFile.outputStream().use { versionProps.store(it, null) }
+}
+
+val autoVersionName = "$vMajor.$vMinor.$vPatch"
 
 android {
     namespace = "com.example.ministoreapp"
@@ -21,8 +56,8 @@ android {
         applicationId = "com.example.ministoreapp"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2.3"
+        versionCode = vCode
+        versionName = autoVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

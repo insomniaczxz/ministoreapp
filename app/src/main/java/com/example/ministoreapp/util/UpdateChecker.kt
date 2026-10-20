@@ -1,139 +1,213 @@
 package com.example.ministoreapp.util
 
-import android.app.AlertDialog
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.example.ministoreapp.domain.AppReleaseInfo
+import com.example.ministoreapp.domain.AppUpdateManager
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
-object UpdateChecker {
-    private const val GITHUB_RELEASE_URL = "https://api.github.com/repos/insomniaczxz/ministoreapp/releases/latest"
+@Composable
+fun AppUpdateCheckerHost() {
+    val context = LocalContext.current
+    var releaseInfo by remember { mutableStateOf<AppReleaseInfo?>(null) }
+    val currentVersion = remember { AppUpdateManager.getCurrentVersion(context) }
 
-    suspend fun checkForUpdates(context: Context) = withContext(Dispatchers.IO) {
-        try {
-            val url = URL(GITHUB_RELEASE_URL)
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("User-Agent", "MiniStoreApp-Android")
-                connectTimeout = 8000
-                readTimeout = 8000
+    LaunchedEffect(Unit) {
+        val result = AppUpdateManager.fetchLatestRelease(context)
+        if (result.isSuccess) {
+            val info = result.getOrNull()
+            if (info != null && info.hasUpdate) {
+                releaseInfo = info
             }
-
-            if (connection.responseCode == 200) {
-                val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
-                val rootJson = JSONObject(jsonText)
-
-                val tagName = rootJson.optString("tag_name", "")
-                val releaseNotes = rootJson.optString("body", "A new update for SariSync is available.")
-
-                var downloadUrl = ""
-                val assetsArray = rootJson.optJSONArray("assets")
-                if (assetsArray != null && assetsArray.length() > 0) {
-                    val firstAsset = assetsArray.getJSONObject(0)
-                    downloadUrl = firstAsset.optString("browser_download_url", "")
-                }
-
-                if (downloadUrl.isBlank()) {
-                    downloadUrl = rootJson.optString("html_url", "https://github.com/insomniaczxz/ministoreapp/releases/latest")
-                }
-
-                val currentVersionName = try {
-                    val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                    pInfo.versionName ?: "1.0"
-                } catch (e: Exception) {
-                    "1.0"
-                }
-
-                val cleanTag = tagName.removePrefix("v").removePrefix("V").trim()
-                val cleanCurrent = currentVersionName.removePrefix("v").removePrefix("V").trim()
-
-                if (isNewerVersion(cleanTag, cleanCurrent)) {
-                    withContext(Dispatchers.Main) {
-                        showUpdateDialog(context, tagName, releaseNotes, downloadUrl)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
-    private fun isNewerVersion(remoteTag: String, localVersion: String): Boolean {
-        if (remoteTag.isBlank()) return false
-        if (remoteTag.equals(localVersion, ignoreCase = true)) return false
-
-        val remoteParts = remoteTag.split(".").mapNotNull { it.toIntOrNull() }
-        val localParts = localVersion.split(".").mapNotNull { it.toIntOrNull() }
-
-        val length = maxOf(remoteParts.size, localParts.size)
-        for (i in 0 until length) {
-            val r = remoteParts.getOrElse(i) { 0 }
-            val l = localParts.getOrElse(i) { 0 }
-            if (r > l) return true
-            if (r < l) return false
-        }
-        return false
+    releaseInfo?.let { info ->
+        AppUpdateModalDialog(
+            info = info,
+            currentVersion = currentVersion,
+            onDismiss = { releaseInfo = null }
+        )
     }
+}
 
-    private fun showUpdateDialog(context: Context, tagName: String, releaseNotes: String, downloadUrl: String) {
-        AlertDialog.Builder(context)
-            .setTitle("Update Available ($tagName)")
-            .setMessage("A new version ($tagName) of SariSync is available.\n\nRelease Notes:\n$releaseNotes")
-            .setPositiveButton("Download & Install") { _, _ ->
-                if (downloadUrl.endsWith(".apk", ignoreCase = true)) {
-                    val progressDialog = @Suppress("DEPRECATION") android.app.ProgressDialog(context).apply {
-                        setTitle("Downloading SariSync $tagName")
-                        setMessage("Downloading update APK...")
-                        setProgressStyle(@Suppress("DEPRECATION") android.app.ProgressDialog.STYLE_HORIZONTAL)
-                        max = 100
-                        setCancelable(false)
-                        show()
-                    }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppUpdateModalDialog(
+    info: AppReleaseInfo,
+    currentVersion: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
-                    kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch {
-                        val result = com.example.ministoreapp.domain.AppUpdateManager.downloadAndInstallApk(
-                            context = context,
-                            downloadUrl = downloadUrl,
-                            onProgress = { progress ->
-                                progressDialog.progress = progress
-                            }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableIntStateOf(0) }
+
+    BasicAlertDialog(
+        onDismissRequest = {
+            if (!isDownloading) onDismiss()
+        }
+    ) {
+        Card(
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Top Info Circle Icon Badge
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Info",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                // Title
+                Text(
+                    text = "New Update Available\n(v${info.version})",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                // Subtitle
+                Text(
+                    text = "Latest Release: v${info.version} (Current: v$currentVersion)",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Changelog
+                if (info.releaseNotes.isNotBlank()) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.Start,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "Changelog:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        progressDialog.dismiss()
-
-                        if (result.isFailure) {
-                            val err = result.exceptionOrNull()?.message ?: "Download failed"
-                            Toast.makeText(context, "Download Error: $err", Toast.LENGTH_LONG).show()
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-                    }
-                } else {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Cannot open browser: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Text(
+                            text = info.releaseNotes,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
+
+                // Download Progress Bar & Text (Image 2)
+                if (isDownloading) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        LinearProgressIndicator(
+                            progress = { downloadProgress / 100f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = Color(0xFF0B5E38)
+                        )
+                        Text(
+                            text = "Downloading APK... $downloadProgress%",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0B5E38)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Primary Action Button (Download & Install)
+                Button(
+                    onClick = {
+                        if (!info.downloadUrl.isNullOrBlank() && !isDownloading) {
+                            isDownloading = true
+                            coroutineScope.launch {
+                                val downloadResult = AppUpdateManager.downloadAndInstallApk(
+                                    context = context,
+                                    downloadUrl = info.downloadUrl,
+                                    onProgress = { downloadProgress = it }
+                                )
+                                isDownloading = false
+                                if (downloadResult.isFailure) {
+                                    val err = downloadResult.exceptionOrNull()?.message ?: "Download failed"
+                                    Toast.makeText(context, "Download Error: $err", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    enabled = !isDownloading && !info.downloadUrl.isNullOrBlank(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF0B5E38),
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Text(
+                        text = if (isDownloading) "Downloading APK... $downloadProgress%" else "Download & Install Update",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Close Button
+                OutlinedButton(
+                    onClick = onDismiss,
+                    enabled = !isDownloading,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Text("Close", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                }
             }
-            .setNegativeButton("Later", null)
-            .setCancelable(true)
-            .show()
+        }
     }
 }
