@@ -27,6 +27,14 @@ fun CashierVerificationDialog(
     onDismiss: () -> Unit,
     onVerified: (cashier: CashierEntity) -> Unit
 ) {
+    if (!com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CASHIER_SECURITY_PIN)) {
+        val effectiveCashier = cashiers.firstOrNull() ?: CashierEntity(id = "default", name = "Store Owner", pin = "0000")
+        LaunchedEffect(Unit) {
+            onVerified(effectiveCashier)
+        }
+        return
+    }
+
     if (cashiers.isEmpty() && isInitialSetupBypassAllowed) {
         val dummyInitialCashier = CashierEntity(id = "system_initial", name = "Initial Admin", pin = "")
         SideEffect {

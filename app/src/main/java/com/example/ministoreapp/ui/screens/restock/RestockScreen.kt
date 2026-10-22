@@ -7,9 +7,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
@@ -17,7 +22,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.example.ministoreapp.data.local.entities.ProductEntity
 import com.example.ministoreapp.data.local.entities.RestockItemEntity
 import com.example.ministoreapp.domain.RecommendationEngine
+import com.example.ministoreapp.ui.components.CameraBarcodeScannerDialog
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -43,13 +51,16 @@ import kotlin.math.roundToInt
 @Composable
 fun RestockScreen(
     restockItems: List<RestockItemEntity>,
-    allProducts: List<ProductEntity>,
+    allProducts: List<ProductEntity> = emptyList(),
     onUpdateQuantity: (RestockItemEntity, Int) -> Unit,
     onRemoveItem: (RestockItemEntity) -> Unit,
-    onClearRestock: () -> Unit
+    onClearRestock: () -> Unit,
+    onAddRestockItem: (RestockItemEntity) -> Unit = {}
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    var showCameraScannerDialog by remember { mutableStateOf(false) }
+    var scannedProductForRestock by remember { mutableStateOf<ProductEntity?>(null) }
 
     val totalPurchasingCost = restockItems.sumOf { it.cost * it.quantity }
     val totalSellingPrice = restockItems.sumOf { it.sellingPrice * it.quantity }
@@ -268,11 +279,16 @@ fun RestockScreen(
                 }
             }
         } else {
-            LazyColumn(
+            val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+            val isTabletLayout = configuration.screenWidthDp >= 600 && com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.TABLET_POS_LAYOUT)
+
+            LazyVerticalGrid(
+                columns = if (isTabletLayout) GridCells.Adaptive(minSize = 340.dp) else GridCells.Fixed(1),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                items(restockItems, key = { it.id }) { item ->
+                items(items = restockItems, key = { it.id }) { item ->
                     RestockItemCard(
                         item = item,
                         onUpdateQuantity = { newQty -> onUpdateQuantity(item, newQty) },
@@ -289,9 +305,99 @@ fun RestockScreen(
             ) {
                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Clear All Restock Items", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                Text("Clear All Restock Items", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
             }
         }
+    }
+
+    if (showCameraScannerDialog) {
+        CameraBarcodeScannerDialog(
+            title = "Scan Product to Restock",
+            onDismiss = { showCameraScannerDialog = false },
+            onBarcodeScanned = { scannedCode ->
+                showCameraScannerDialog = false
+                val code = scannedCode.trim()
+                val matched = allProducts.find { it.barcode.equals(code, ignoreCase = true) || it.comboKey.contains(code, ignoreCase = true) }
+                if (matched != null) {
+                    scannedProductForRestock = matched
+                } else {
+                    Toast.makeText(context, "Product with barcode '$code' not found.", Toast.LENGTH_LONG).show()
+                }
+            }
+        )
+    }
+
+    scannedProductForRestock?.let { product ->
+        var qtyInput by remember { mutableStateOf("1") }
+        var isCaseMode by remember { mutableStateOf(product.isWholesaleParent) }
+
+        AlertDialog(
+            onDismissRequest = { scannedProductForRestock = null },
+            icon = { Icon(Icons.Default.Inventory2, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Restock '${product.name}'", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = !isCaseMode,
+                            onClick = { isCaseMode = false },
+                            label = { Text("By Pieces") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = isCaseMode,
+                            onClick = { isCaseMode = true },
+                            label = { Text("By Cases/Bundles (${product.itemsPerWholesalePack ?: 12} pcs)") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = qtyInput,
+                        onValueChange = { qtyInput = it },
+                        label = { Text(if (isCaseMode) "Number of Cases/Bundles" else "Number of Pieces") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    val inputQty = qtyInput.toIntOrNull() ?: 1
+                    val totalPcs = if (isCaseMode) inputQty * (product.itemsPerWholesalePack ?: 12) else inputQty
+                    Text("Total Stock Addition: $totalPcs pcs", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val inputQty = qtyInput.toIntOrNull() ?: 1
+                        val totalPcs = if (isCaseMode) inputQty * (product.itemsPerWholesalePack ?: 12) else inputQty
+                        val restockItem = RestockItemEntity(
+                            name = product.name,
+                            cost = product.cost,
+                            sellingPrice = product.sellingPrice,
+                            quantity = totalPcs,
+                            unit = product.unit,
+                            unitSize = product.unitSize
+                        )
+                        onAddRestockItem(restockItem)
+                        scannedProductForRestock = null
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Add to Restock List", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { scannedProductForRestock = null }) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 }
 

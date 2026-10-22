@@ -60,7 +60,7 @@ import java.util.concurrent.Executors
         WholesaleUnitEntity::class,
         VendorEntity::class
     ],
-    version = 2,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -87,11 +87,37 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
+                val migration2to3 = object : androidx.room.migration.Migration(2, 3) {
+                    override fun migrate(db: SupportSQLiteDatabase) {
+                        db.execSQL("ALTER TABLE security_settings ADD COLUMN hasClaimedFreeTrial INTEGER NOT NULL DEFAULT 0")
+                    }
+                }
+
+                val migration3to4 = object : androidx.room.migration.Migration(3, 4) {
+                    override fun migrate(db: SupportSQLiteDatabase) {
+                        db.execSQL("ALTER TABLE products ADD COLUMN barcode TEXT")
+                        db.execSQL("ALTER TABLE products ADD COLUMN caseBarcode TEXT")
+                        db.execSQL("ALTER TABLE products ADD COLUMN stockQty INTEGER NOT NULL DEFAULT 0")
+                        db.execSQL("ALTER TABLE product_groups ADD COLUMN barcode TEXT")
+                        db.execSQL("ALTER TABLE product_groups ADD COLUMN caseBarcode TEXT")
+                        db.execSQL("ALTER TABLE product_groups ADD COLUMN stockQty INTEGER NOT NULL DEFAULT 0")
+                    }
+                }
+
+                val migration4to5 = object : androidx.room.migration.Migration(4, 5) {
+                    override fun migrate(db: SupportSQLiteDatabase) {
+                        db.execSQL("ALTER TABLE security_settings ADD COLUMN pricingBaseMarkup REAL NOT NULL DEFAULT 3.0")
+                        db.execSQL("ALTER TABLE security_settings ADD COLUMN pricingBracketSize REAL NOT NULL DEFAULT 5.0")
+                        db.execSQL("ALTER TABLE security_settings ADD COLUMN pricingMarkupIncrease REAL NOT NULL DEFAULT 1.0")
+                    }
+                }
+
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     DB_NAME
                 )
+                    .addMigrations(migration2to3, migration3to4, migration4to5)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

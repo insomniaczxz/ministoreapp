@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,8 +39,25 @@ data class StoreBulletinLogItem(
     val subtitle: String,
     val detailsList: List<String>,
     val timestamp: Long,
-    val performer: String
+    val performer: String,
+    val vendorId: String? = null
 )
+
+fun isVendorScheduledToday(vendor: VendorEntity): Boolean {
+    if (!vendor.isTruckPanel) return false
+    if (vendor.routeScheduleType == "DAILY") return true
+    if (vendor.routeScheduleType == "SPECIFIC_DAYS" && vendor.routeSchedule.isBlank()) return false
+    
+    val todayShort = SimpleDateFormat("E", Locale.ENGLISH).format(Date()) // e.g. "Mon"
+    val todayLong = SimpleDateFormat("EEEE", Locale.ENGLISH).format(Date()) // e.g. "Monday"
+    
+    val parts = vendor.routeSchedule.split(",").map { it.trim().substringBefore(":") }
+    return parts.any { 
+        it.equals("Daily", ignoreCase = true) || 
+        it.equals(todayShort, ignoreCase = true) || 
+        it.equals(todayLong, ignoreCase = true) 
+    } || vendor.routeSchedule.contains(todayShort, ignoreCase = true) || vendor.routeSchedule.contains(todayLong, ignoreCase = true)
+}
 
 fun extractTodayRouteLocation(routeSchedule: String, todayDayShort: String): String {
     if (routeSchedule.isBlank()) return "Scheduled Route"
@@ -53,6 +71,22 @@ fun extractTodayRouteLocation(routeSchedule: String, todayDayShort: String): Str
     return routeSchedule
 }
 
+fun getTodayDateKey(): String {
+    return SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
+}
+
+fun getArrivedVendorIdsToday(context: android.content.Context): Set<String> {
+    val prefs = context.getSharedPreferences("ministore_prefs", android.content.Context.MODE_PRIVATE)
+    return prefs.getStringSet("arrived_vendors_${getTodayDateKey()}", emptySet()) ?: emptySet()
+}
+
+fun markVendorArrivedToday(context: android.content.Context, vendorId: String) {
+    val prefs = context.getSharedPreferences("ministore_prefs", android.content.Context.MODE_PRIVATE)
+    val current = prefs.getStringSet("arrived_vendors_${getTodayDateKey()}", emptySet()) ?: emptySet()
+    val updated = current.toMutableSet().apply { add(vendorId) }
+    prefs.edit().putStringSet("arrived_vendors_${getTodayDateKey()}", updated).apply()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InfoScreen(
@@ -64,7 +98,9 @@ fun InfoScreen(
     creditTransactions: List<CreditTransactionEntity> = emptyList(),
     customers: List<CustomerEntity> = emptyList(),
     wholesaleProducts: List<ProductEntity> = emptyList(),
-    auditLogs: List<com.example.ministoreapp.data.local.entities.AuditLogEntity> = emptyList()
+    auditLogs: List<com.example.ministoreapp.data.local.entities.AuditLogEntity> = emptyList(),
+    cashiers: List<com.example.ministoreapp.data.local.entities.CashierEntity> = emptyList(),
+    onMarkVendorArrived: (VendorEntity, com.example.ministoreapp.data.local.entities.CashierEntity) -> Unit = { _, _ -> }
 ) {
     var activeFilter by remember { mutableStateOf("ALL") }
     var expandedLogId by remember { mutableStateOf<String?>(null) }
@@ -95,32 +131,35 @@ fun InfoScreen(
         }
 
         // 2. Vendors (Updated or Active)
-        vendors.forEach { v ->
-            val routeText = if (v.isTruckPanel && v.routeSchedule.isNotBlank()) "Route: ${v.routeSchedule}" else ""
-            val agentText = if (v.agentName.isNotBlank()) "Agent: ${v.agentName}${if (v.agentContactNumber.isNotBlank()) " (${v.agentContactNumber})" else ""}" else ""
-            val productsText = if (v.productsSold.isNotBlank()) "Products: ${v.productsSold}" else ""
+        if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.VENDOR_MANAGEMENT)) {
+            vendors.forEach { v ->
+                val routeText = if (v.isTruckPanel && v.routeSchedule.isNotBlank()) "Route: ${v.routeSchedule}" else ""
+                val agentText = if (v.agentName.isNotBlank()) "Agent: ${v.agentName}${if (v.agentContactNumber.isNotBlank()) " (${v.agentContactNumber})" else ""}" else ""
+                val productsText = if (v.productsSold.isNotBlank()) "Products: ${v.productsSold}" else ""
 
-            val details = listOfNotNull(
-                if (v.ownerName.isNotBlank()) "Owner: ${v.ownerName}" else null,
-                if (productsText.isNotBlank()) productsText else null,
-                if (agentText.isNotBlank()) agentText else null,
-                if (routeText.isNotBlank()) routeText else null
-            )
-
-            val logEntry = auditLogs.find { it.actionType == "SAVE_VENDOR" && it.description.contains(v.name, ignoreCase = true) }
-            val resolvedPerformer = logEntry?.cashierName ?: "System"
-
-            list.add(
-                StoreBulletinLogItem(
-                    id = "v_${v.id}",
-                    category = "VENDOR",
-                    title = "🚚 VENDOR UPDATE · ${v.name}",
-                    subtitle = if (v.contactNumber.isNotBlank()) "Contact: ${v.contactNumber}" else "Vendor Supplier Profile",
-                    detailsList = details,
-                    timestamp = v.updatedAt,
-                    performer = resolvedPerformer
+                val details = listOfNotNull(
+                    if (v.ownerName.isNotBlank()) "Owner: ${v.ownerName}" else null,
+                    if (productsText.isNotBlank()) productsText else null,
+                    if (agentText.isNotBlank()) agentText else null,
+                    if (routeText.isNotBlank()) routeText else null
                 )
-            )
+
+                val logEntry = auditLogs.find { it.actionType == "SAVE_VENDOR" && it.description.contains(v.name, ignoreCase = true) }
+                val resolvedPerformer = logEntry?.cashierName ?: "System"
+
+                list.add(
+                    StoreBulletinLogItem(
+                        id = "v_${v.id}",
+                        category = "VENDOR",
+                        title = "🚚 VENDOR UPDATE · ${v.name}",
+                        subtitle = if (v.contactNumber.isNotBlank()) "Contact: ${v.contactNumber}" else "Vendor Supplier Profile",
+                        detailsList = details,
+                        timestamp = v.updatedAt,
+                        performer = resolvedPerformer,
+                        vendorId = v.id
+                    )
+                )
+            }
         }
 
         // 3. Ban Records (Past 7 Days)
@@ -193,15 +232,42 @@ fun InfoScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(12.dp)
+            .background(MaterialTheme.colorScheme.background),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "Store Intelligence & Updates (Last 7 Days)",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+        Column(
+            modifier = Modifier
+                .widthIn(max = 720.dp)
+                .fillMaxSize()
+                .padding(12.dp)
+        ) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            var arrivedVendorIds by remember { mutableStateOf(getArrivedVendorIdsToday(context)) }
+            var vendorToVerifyArrival by remember { mutableStateOf<VendorEntity?>(null) }
+
+            vendorToVerifyArrival?.let { vendor ->
+                val effectiveCashiers = remember(cashiers) {
+                    if (cashiers.isEmpty()) listOf(com.example.ministoreapp.data.local.entities.CashierEntity(id = "default_owner", name = "Store Owner", pin = "0000")) else cashiers
+                }
+                com.example.ministoreapp.ui.components.CashierVerificationDialog(
+                    cashiers = effectiveCashiers,
+                    actionTitle = "Verify Cashier to Mark Delivery for '${vendor.name}'",
+                    onDismiss = { vendorToVerifyArrival = null },
+                    onVerified = { cashier ->
+                        markVendorArrivedToday(context, vendor.id)
+                        arrivedVendorIds = getArrivedVendorIdsToday(context)
+                        onMarkVendorArrived(vendor, cashier)
+                        vendorToVerifyArrival = null
+                    }
+                )
+            }
+
+            Text(
+                text = "Store Intelligence & Updates (Last 7 Days)",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
 
         Spacer(modifier = Modifier.height(10.dp))
 
@@ -253,109 +319,6 @@ fun InfoScreen(
         }
 
         Spacer(modifier = Modifier.height(10.dp))
-
-        val todayDayShort = remember { SimpleDateFormat("E", Locale.ENGLISH).format(Date()) }
-        val todayFullDay = remember { SimpleDateFormat("EEEE", Locale.ENGLISH).format(Date()) }
-        val storeAddressClean = remember(securitySettings) { securitySettings?.storeAddress?.trim() ?: "" }
-
-        val todayRouteVendors = remember(vendors, todayDayShort) {
-            vendors.filter { v ->
-                if (!v.isTruckPanel) false
-                else if (v.routeScheduleType == "DAILY") true
-                else if (v.routeScheduleType == "SPECIFIC_DAYS" && v.routeSchedule.isBlank()) false
-                else v.routeSchedule.contains(todayDayShort, ignoreCase = true) || v.routeSchedule.contains("Daily", ignoreCase = true)
-            }
-        }
-
-        if (todayRouteVendors.isNotEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "🚚 Vendor Deliveries Scheduled Today ($todayFullDay)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    todayRouteVendors.forEach { v ->
-                        val todayLocation = extractTodayRouteLocation(v.routeSchedule, todayDayShort)
-                        val isStoreLocationMatch = storeAddressClean.isNotBlank() && (
-                            todayLocation.contains(storeAddressClean, ignoreCase = true) ||
-                            storeAddressClean.contains(todayLocation, ignoreCase = true) ||
-                            storeAddressClean.split(" ", ",", "-", "/").any { word ->
-                                word.length >= 3 && todayLocation.contains(word, ignoreCase = true)
-                            }
-                        )
-
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isStoreLocationMatch) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else MaterialTheme.colorScheme.surface
-                            ),
-                            border = BorderStroke(
-                                1.dp,
-                                if (isStoreLocationMatch) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = v.name,
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-
-                                    if (isStoreLocationMatch) {
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = MaterialTheme.colorScheme.primary
-                                        ) {
-                                            Text(
-                                                text = "🎯 ARRIVING AT STORE LOCATION",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onPrimary,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Text(
-                                    text = "📍 Today's Route: $todayLocation",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (isStoreLocationMatch) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.Bold
-                                )
-
-                                val contactStr = if (v.agentContactNumber.isNotBlank()) v.agentContactNumber else v.contactNumber
-                                if (v.agentName.isNotBlank() || contactStr.isNotBlank()) {
-                                    Text(
-                                        text = "Agent: ${v.agentName.ifBlank { "N/A" }}${if (contactStr.isNotBlank()) " ($contactStr)" else ""}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.outline
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
 
         if (filteredLogs.isEmpty()) {
             Box(
@@ -452,6 +415,45 @@ fun InfoScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.outline
                                 )
+                            }
+
+                            if (log.category == "VENDOR" && log.vendorId != null) {
+                                val vendor = vendors.find { it.id == log.vendorId }
+                                if (vendor != null && isVendorScheduledToday(vendor)) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    val isArrived = arrivedVendorIds.contains(vendor.id)
+                                    if (isArrived) {
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant,
+                                            modifier = Modifier.fillMaxWidth().clickable {
+                                                val prefs = context.getSharedPreferences("ministore_prefs", android.content.Context.MODE_PRIVATE)
+                                                val current = prefs.getStringSet("arrived_vendors_${getTodayDateKey()}", emptySet()) ?: emptySet()
+                                                val updated = current.toMutableSet().apply { remove(vendor.id) }
+                                                prefs.edit().putStringSet("arrived_vendors_${getTodayDateKey()}", updated).apply()
+                                                arrivedVendorIds = getArrivedVendorIdsToday(context)
+                                            }
+                                        ) {
+                                            Text(
+                                                text = "✓ Arrived Today (Undo)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(vertical = 8.dp),
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                            )
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = { vendorToVerifyArrival = vendor },
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                        ) {
+                                            Text("🚚 Vendor Truck Arrived", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(6.dp))
@@ -575,5 +577,6 @@ fun InfoScreen(
             },
             shape = RoundedCornerShape(24.dp)
         )
+    }
     }
 }

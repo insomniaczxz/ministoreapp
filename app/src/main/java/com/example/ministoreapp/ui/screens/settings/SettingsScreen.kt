@@ -18,6 +18,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ContentCopy
@@ -105,19 +108,23 @@ fun SettingsScreen(
     onImportBackupJson: (String) -> Unit = {},
     onSwitchGoogleAccount: () -> Unit = {},
     googleAccountEmail: String? = null,
+    initialBarcode: String = "",
     onUpdateSecuritySettings: (SecuritySettingsEntity) -> Unit
 ) {
+    val context = LocalContext.current
     val currentSettings = securitySettings ?: SecuritySettingsEntity()
     var activeVerifiedCashier by remember { mutableStateOf<CashierEntity?>(null) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.background),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (activeDetailView != null) {
             Box(
                 modifier = Modifier
+                    .widthIn(max = 720.dp)
                     .fillMaxSize()
                     .padding(12.dp)
             ) {
@@ -125,6 +132,7 @@ fun SettingsScreen(
                     "PRODUCTS" -> ProductsManagementTab(
                         products = products,
                         productGroups = productGroups,
+                        initialBarcode = initialBarcode,
                         cashiers = cashiers,
                         categories = categories,
                         brands = brands,
@@ -132,6 +140,8 @@ fun SettingsScreen(
                         containers = containers,
                         wholesaleUnits = wholesaleUnits,
                         vendors = vendors,
+                        securitySettings = currentSettings,
+                        onUpdateSecuritySettings = onUpdateSecuritySettings,
                         activeVerifiedCashier = activeVerifiedCashier,
                         onCashierVerified = { activeVerifiedCashier = it },
                         onSaveProductGroup = onSaveProductGroup,
@@ -184,6 +194,7 @@ fun SettingsScreen(
         } else {
             LazyColumn(
                 modifier = Modifier
+                    .widthIn(max = 720.dp)
                     .fillMaxSize()
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -209,53 +220,63 @@ fun SettingsScreen(
                 }
 
                 // 3. Vendors
-                item {
-                    SettingsTileRow(
-                        title = "Vendors",
-                        subtitle = "${vendors.size} suppliers & truck panel routes",
-                        icon = Icons.Default.Store,
-                        onClick = { onActiveDetailViewChange("VENDORS") }
-                    )
+                if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.VENDOR_MANAGEMENT)) {
+                    item {
+                        SettingsTileRow(
+                            title = "Vendors",
+                            subtitle = "${vendors.size} suppliers & truck panel routes",
+                            icon = Icons.Default.Store,
+                            onClick = { onActiveDetailViewChange("VENDORS") }
+                        )
+                    }
                 }
 
                 // 4. Dropdown Options
-                item {
-                    SettingsTileRow(
-                        title = "Dropdown Options",
-                        subtitle = "${categories.size} categories · ${brands.size} brands · ${containers.size} containers",
-                        icon = Icons.AutoMirrored.Filled.ListAlt,
-                        onClick = { onActiveDetailViewChange("DROPDOWNS") }
-                    )
+                if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CUSTOM_DROPDOWNS)) {
+                    item {
+                        SettingsTileRow(
+                            title = "Dropdown Options",
+                            subtitle = "${categories.size} categories · ${brands.size} brands · ${containers.size} containers",
+                            icon = Icons.AutoMirrored.Filled.ListAlt,
+                            onClick = { onActiveDetailViewChange("DROPDOWNS") }
+                        )
+                    }
                 }
 
                 // 5. Credit Ban List
-                item {
-                    SettingsTileRow(
-                        title = "Credit Ban List",
-                        subtitle = "${banRecords.size} people flagged",
-                        icon = Icons.Default.Block,
-                        onClick = { onActiveDetailViewChange("BAN_LIST") }
-                    )
+                if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CUSTOMER_BAN_LIST)) {
+                    item {
+                        SettingsTileRow(
+                            title = "Credit Ban List",
+                            subtitle = "${banRecords.size} people flagged",
+                            icon = Icons.Default.Block,
+                            onClick = { onActiveDetailViewChange("BAN_LIST") }
+                        )
+                    }
                 }
 
                 // 6. Audit Logs
-                item {
-                    SettingsTileRow(
-                        title = "Audit Logs",
-                        subtitle = "${auditLogs.size} recorded actions",
-                        icon = Icons.Default.Shield,
-                        onClick = { onActiveDetailViewChange("AUDIT_LOGS") }
-                    )
+                if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.AUDIT_LOGS)) {
+                    item {
+                        SettingsTileRow(
+                            title = "Audit Logs",
+                            subtitle = "${auditLogs.size} recorded actions",
+                            icon = Icons.Default.Shield,
+                            onClick = { onActiveDetailViewChange("AUDIT_LOGS") }
+                        )
+                    }
                 }
 
                 // 7. Security
-                item {
-                    SettingsTileRow(
-                        title = "Security",
-                        subtitle = "App Launch, Settings PIN & 6-digit PIN change",
-                        icon = Icons.Default.Lock,
-                        onClick = { onActiveDetailViewChange("SECURITY") }
-                    )
+                if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CASHIER_SECURITY_PIN)) {
+                    item {
+                        SettingsTileRow(
+                            title = "Security",
+                            subtitle = "App Launch, Settings PIN & 6-digit PIN change",
+                            icon = Icons.Default.Lock,
+                            onClick = { onActiveDetailViewChange("SECURITY") }
+                        )
+                    }
                 }
 
                 // 8. Store Profile
@@ -326,13 +347,26 @@ fun SettingsScreen(
                 }
 
                 // 10. Sync & Backup
+                if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CLOUD_SYNC)) {
+                    item {
+                        SettingsTileRow(
+                            title = "Sync & Backup",
+                            subtitle = "Google Drive delta sync & JSON backup/restore",
+                            icon = Icons.Default.Sync,
+                            onClick = { onActiveDetailViewChange("SYNC") }
+                        )
+                    }
+                }
+
                 item {
-                    SettingsTileRow(
-                        title = "Sync & Backup",
-                        subtitle = "Google Drive delta sync & JSON backup/restore",
-                        icon = Icons.Default.Sync,
-                        onClick = { onActiveDetailViewChange("SYNC") }
-                    )
+                    StoreFeaturesAndModulesCard()
+                }
+
+                val isDebug = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                if (isDebug) {
+                    item {
+                        DeveloperOptionsCard()
+                    }
                 }
 
                 // 11. About + Update App
@@ -452,6 +486,7 @@ fun SettingsTileRow(
 fun ProductsManagementTab(
     products: List<ProductEntity>,
     productGroups: List<ProductGroupEntity> = emptyList(),
+    initialBarcode: String = "",
     cashiers: List<CashierEntity>,
     categories: List<CategoryEntity>,
     brands: List<BrandEntity>,
@@ -459,6 +494,8 @@ fun ProductsManagementTab(
     containers: List<ContainerEntity> = emptyList(),
     wholesaleUnits: List<WholesaleUnitEntity> = emptyList(),
     vendors: List<VendorEntity> = emptyList(),
+    securitySettings: SecuritySettingsEntity? = null,
+    onUpdateSecuritySettings: (SecuritySettingsEntity) -> Unit = {},
     activeVerifiedCashier: CashierEntity? = null,
     onCashierVerified: (CashierEntity) -> Unit = {},
     onSaveProductGroup: (group: ProductGroupEntity, generatedItems: List<ProductEntity>, cashier: CashierEntity) -> Unit,
@@ -528,6 +565,27 @@ fun ProductsManagementTab(
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("New", fontWeight = FontWeight.Bold)
+            }
+        }
+
+        if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.PROFIT_AND_PRICING_ENGINE) && securitySettings != null) {
+            var showPricingSettings by remember { mutableStateOf(false) }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = { showPricingSettings = !showPricingSettings },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (showPricingSettings) "Hide Pricing & Markup Rules" else "🧮 Customize Pricing & Markup Rules", fontWeight = FontWeight.Bold)
+            }
+
+            if (showPricingSettings) {
+                Spacer(modifier = Modifier.height(10.dp))
+                CustomPricingEngineCard(
+                    securitySettings = securitySettings,
+                    onUpdateSecuritySettings = onUpdateSecuritySettings
+                )
             }
         }
 
@@ -648,8 +706,12 @@ fun ProductsManagementTab(
     }
 
     if (showAddProductDialog || editingProductGroup != null) {
+        val matchingProds = if (editingProductGroup != null) products.filter { it.groupId == editingProductGroup?.id } else emptyList()
         AddProductDialog(
             existingGroup = editingProductGroup,
+            existingProductsForGroup = matchingProds,
+            initialBarcode = initialBarcode,
+            securitySettings = securitySettings,
             cashiers = cashiers,
             categories = categories,
             brands = brands,
@@ -674,27 +736,41 @@ fun ProductsManagementTab(
     }
 
     verifySingleDeleteProduct?.let { prod ->
-        CashierVerificationDialog(
-            cashiers = cashiers,
-            actionTitle = "Verify Cashier to Delete Item '${prod.name}'",
-            onDismiss = { verifySingleDeleteProduct = null },
-            onVerified = { cashier ->
-                onDeleteSingleProduct(prod, cashier)
+        if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CASHIER_SECURITY_PIN)) {
+            CashierVerificationDialog(
+                cashiers = cashiers,
+                actionTitle = "Verify Cashier to Delete Item '${prod.name}'",
+                onDismiss = { verifySingleDeleteProduct = null },
+                onVerified = { cashier ->
+                    onDeleteSingleProduct(prod, cashier)
+                    verifySingleDeleteProduct = null
+                }
+            )
+        } else {
+            LaunchedEffect(prod) {
+                onDeleteSingleProduct(prod, cashiers.firstOrNull() ?: com.example.ministoreapp.data.local.entities.CashierEntity(id = "default", name = "Store Owner", pin = "0000"))
                 verifySingleDeleteProduct = null
             }
-        )
+        }
     }
 
     verifyGroupDeleteId?.let { groupId ->
-        CashierVerificationDialog(
-            cashiers = cashiers,
-            actionTitle = "Verify Cashier to Delete Product Group",
-            onDismiss = { verifyGroupDeleteId = null },
-            onVerified = { cashier ->
-                onDeleteProductGroup(groupId, cashier)
+        if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CASHIER_SECURITY_PIN)) {
+            CashierVerificationDialog(
+                cashiers = cashiers,
+                actionTitle = "Verify Cashier to Delete Product Group",
+                onDismiss = { verifyGroupDeleteId = null },
+                onVerified = { cashier ->
+                    onDeleteProductGroup(groupId, cashier)
+                    verifyGroupDeleteId = null
+                }
+            )
+        } else {
+            LaunchedEffect(groupId) {
+                onDeleteProductGroup(groupId, cashiers.firstOrNull() ?: com.example.ministoreapp.data.local.entities.CashierEntity(id = "default", name = "Store Owner", pin = "0000"))
                 verifyGroupDeleteId = null
             }
-        )
+        }
     }
 }
 
@@ -1003,7 +1079,8 @@ data class PreviewItem(
     val isWholesale: Boolean,
     val itemsPerPack: Int?,
     val isCheckedState: MutableState<Boolean> = mutableStateOf(true),
-    val customPriceInput: MutableState<String> = mutableStateOf("")
+    val customPriceInput: MutableState<String> = mutableStateOf(""),
+    val barcodeState: MutableState<String> = mutableStateOf("")
 )
 
 fun buildProductNames(baseName: String, variantsInput: String): List<String> {
@@ -1023,6 +1100,9 @@ fun buildProductNames(baseName: String, variantsInput: String): List<String> {
 @Composable
 fun AddProductDialog(
     existingGroup: ProductGroupEntity? = null,
+    existingProductsForGroup: List<ProductEntity> = emptyList(),
+    initialBarcode: String = "",
+    securitySettings: SecuritySettingsEntity? = null,
     cashiers: List<CashierEntity>,
     categories: List<CategoryEntity>,
     brands: List<BrandEntity>,
@@ -1101,8 +1181,12 @@ fun AddProductDialog(
         retailCostInput.toDoubleOrNull() ?: 0.0
     }
 
+    val bMarkup = securitySettings?.pricingBaseMarkup ?: 3.0
+    val bSize = securitySettings?.pricingBracketSize ?: 5.0
+    val mInc = securitySettings?.pricingMarkupIncrease ?: 1.0
+
     // Wholesale Selling Price Calculation (Auto-pricing or Wholesale Cost + Wholesale Fixed Markup)
-    val wholesaleSellingPrice = remember(wholesaleCost, wholesaleMarkupInput, wholesaleManualPriceInput) {
+    val wholesaleSellingPrice = remember(wholesaleCost, wholesaleMarkupInput, wholesaleManualPriceInput, bMarkup, bSize, mInc) {
         val manualVal = wholesaleManualPriceInput.toDoubleOrNull()
         val markupVal = wholesaleMarkupInput.toDoubleOrNull() ?: 0.0
         if (manualVal != null && manualVal > 0) {
@@ -1111,7 +1195,7 @@ fun AddProductDialog(
             if (markupVal > 0) {
                 wholesaleCost + markupVal
             } else {
-                PricingEngine.calculateSellingPrice(wholesaleCost, "FIXED", 0.0, null)
+                PricingEngine.calculateSellingPrice(wholesaleCost, "FIXED", 0.0, null, bMarkup, bSize, mInc)
             }
         } else {
             0.0
@@ -1119,13 +1203,13 @@ fun AddProductDialog(
     }
 
     // Retail Selling Price Calculation (Auto-pricing or Computed Retail Cost + Retail Fixed Markup)
-    val retailSellingPrice = remember(computedRetailCost, retailMarkupInput) {
+    val retailSellingPrice = remember(computedRetailCost, retailMarkupInput, bMarkup, bSize, mInc) {
         val markupVal = retailMarkupInput.toDoubleOrNull() ?: 0.0
         if (computedRetailCost > 0) {
             if (markupVal > 0) {
                 computedRetailCost + markupVal
             } else {
-                PricingEngine.calculateSellingPrice(computedRetailCost, "FIXED", 0.0, null)
+                PricingEngine.calculateSellingPrice(computedRetailCost, "FIXED", 0.0, null, bMarkup, bSize, mInc)
             }
         } else {
             0.0
@@ -1151,7 +1235,7 @@ fun AddProductDialog(
         baseName, aliases, unitSize, containerType, variantsInput,
         hasWholesale, wholesaleUnit, wholesaleCost, itemsPerPack, wholesaleSellingPrice, showWholesaleInSearch,
         hasRetail, computedRetailCost, retailSellingPrice, hasBundle, bundleQtyInput, bundlePriceInput,
-        isBeverage, coldRetailPrice, coldCasePrice, excludedKeysList
+        isBeverage, coldRetailPrice, coldCasePrice, excludedKeysList, existingProductsForGroup
     ) {
         val list = mutableListOf<PreviewItem>()
         if (baseName.isBlank()) return@remember list
@@ -1166,9 +1250,15 @@ fun AddProductDialog(
                 if (containerType.isNotBlank()) append(" $containerType")
             }
 
+            // Helper to extract saved barcode/price
+            fun getSavedItem(key: String): ProductEntity? {
+                return existingProductsForGroup.find { it.comboKey == key }
+            }
+
             // 1. Wholesale Case
             if (hasWholesale && showWholesaleInSearch && wholesaleCost > 0) {
                 val comboKey = "${name}_wholesale_reg"
+                val saved = getSavedItem(comboKey)
                 list.add(
                     PreviewItem(
                         comboKey = comboKey,
@@ -1180,12 +1270,15 @@ fun AddProductDialog(
                         variantType = "WHOLESALE",
                         isWholesale = true,
                         itemsPerPack = itemsPerPack,
-                        isCheckedState = mutableStateOf(!excludedKeysList.contains(comboKey))
+                        isCheckedState = mutableStateOf(!excludedKeysList.contains(comboKey)),
+                        customPriceInput = mutableStateOf(saved?.manualSellingPrice?.roundToInt()?.toString() ?: ""),
+                        barcodeState = mutableStateOf(saved?.barcode ?: saved?.caseBarcode ?: "")
                     )
                 )
 
                 if (isBeverage && coldCasePrice > 0) {
                     val coldComboKey = "${name}_wholesale_cold"
+                    val coldSaved = getSavedItem(coldComboKey)
                     list.add(
                         PreviewItem(
                             comboKey = coldComboKey,
@@ -1197,7 +1290,9 @@ fun AddProductDialog(
                             variantType = "COLD_WHOLESALE",
                             isWholesale = true,
                             itemsPerPack = itemsPerPack,
-                            isCheckedState = mutableStateOf(!excludedKeysList.contains(coldComboKey))
+                            isCheckedState = mutableStateOf(!excludedKeysList.contains(coldComboKey)),
+                            customPriceInput = mutableStateOf(coldSaved?.manualSellingPrice?.roundToInt()?.toString() ?: ""),
+                            barcodeState = mutableStateOf(coldSaved?.barcode ?: coldSaved?.caseBarcode ?: "")
                         )
                     )
                 }
@@ -1209,6 +1304,7 @@ fun AddProductDialog(
 
                 // Add Retail Base (1 Piece)
                 val retailComboKey = "${name}_main_reg"
+                val retailSaved = getSavedItem(retailComboKey)
                 list.add(
                     PreviewItem(
                         comboKey = retailComboKey,
@@ -1220,13 +1316,16 @@ fun AddProductDialog(
                         variantType = "RETAIL",
                         isWholesale = false,
                         itemsPerPack = 1,
-                        isCheckedState = mutableStateOf(!excludedKeysList.contains(retailComboKey))
+                        isCheckedState = mutableStateOf(!excludedKeysList.contains(retailComboKey)),
+                        customPriceInput = mutableStateOf(retailSaved?.manualSellingPrice?.roundToInt()?.toString() ?: ""),
+                        barcodeState = mutableStateOf(retailSaved?.barcode ?: "")
                     )
                 )
 
                 // Add Tingi Bundle Price if defined and not identical to single piece
                 if (hasBundle && bPrice > 0 && !(bQty == 1 && bPrice == retailSellingPrice)) {
                     val bundleComboKey = "${name}_bundle"
+                    val bundleSaved = getSavedItem(bundleComboKey)
                     list.add(
                         PreviewItem(
                             comboKey = bundleComboKey,
@@ -1238,13 +1337,16 @@ fun AddProductDialog(
                             variantType = "RETAIL",
                             isWholesale = false,
                             itemsPerPack = bQty,
-                            isCheckedState = mutableStateOf(!excludedKeysList.contains(bundleComboKey))
+                            isCheckedState = mutableStateOf(!excludedKeysList.contains(bundleComboKey)),
+                            customPriceInput = mutableStateOf(bundleSaved?.manualSellingPrice?.roundToInt()?.toString() ?: ""),
+                            barcodeState = mutableStateOf(bundleSaved?.barcode ?: "")
                         )
                     )
                 }
 
                 if (isBeverage && coldRetailPrice > 0) {
                     val coldComboKey = "${name}_main_cold"
+                    val coldSaved = getSavedItem(coldComboKey)
                     list.add(
                         PreviewItem(
                             comboKey = coldComboKey,
@@ -1256,7 +1358,9 @@ fun AddProductDialog(
                             variantType = "COLD_RETAIL",
                             isWholesale = false,
                             itemsPerPack = 1,
-                            isCheckedState = mutableStateOf(!excludedKeysList.contains(coldComboKey))
+                            isCheckedState = mutableStateOf(!excludedKeysList.contains(coldComboKey)),
+                            customPriceInput = mutableStateOf(coldSaved?.manualSellingPrice?.roundToInt()?.toString() ?: ""),
+                            barcodeState = mutableStateOf(coldSaved?.barcode ?: "")
                         )
                     )
                 }
@@ -1293,7 +1397,9 @@ fun AddProductDialog(
                         AutoCompletableOutlinedTextField(value = category, onValueChange = { category = it }, label = "Category", suggestions = categorySuggestions, modifier = Modifier.weight(1f))
                     }
 
-                    AutoCompletableOutlinedTextField(value = storeName, onValueChange = { storeName = it }, label = "Vendor / Supplier (e.g. Coke Panel)", suggestions = storeSuggestions)
+                    if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.VENDOR_MANAGEMENT)) {
+                        AutoCompletableOutlinedTextField(value = storeName, onValueChange = { storeName = it }, label = "Vendor / Supplier (e.g. Coke Panel)", suggestions = storeSuggestions)
+                    }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(value = unitSize, onValueChange = { unitSize = it }, label = { Text("Unit Size (1L / 65g)") }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f), singleLine = true)
@@ -1378,7 +1484,9 @@ fun AddProductDialog(
                                     if (bQty >= 1 && bPrice > 0 && computedRetailCost > 0) {
                                         val bundleCost = computedRetailCost * bQty
                                         val profit = bPrice - bundleCost
-                                        Text("Cost for $bQty pcs: ₱${bundleCost.roundToInt()} ➔ Profit: +₱${profit.roundToInt()}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                        if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.PROFIT_AND_PRICING_ENGINE)) {
+                                            Text("Cost for $bQty pcs: ₱${bundleCost.roundToInt()} ➔ Profit: +₱${profit.roundToInt()}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                        }
                                     }
                                 }
                             }
@@ -1413,35 +1521,79 @@ fun AddProductDialog(
 
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         previewItems.forEach { item ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                            var showScannerForItem by remember { mutableStateOf(false) }
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8.dp))
+                                    .padding(8.dp)
                             ) {
                                 Row(
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.weight(1f)
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Checkbox(
-                                        checked = item.isCheckedState.value,
-                                        onCheckedChange = { item.isCheckedState.value = it }
-                                    )
-                                    Text(
-                                        text = item.displayName,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.SemiBold
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Checkbox(
+                                            checked = item.isCheckedState.value,
+                                            onCheckedChange = { item.isCheckedState.value = it }
+                                        )
+                                        Text(
+                                            text = item.displayName,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+
+                                    OutlinedTextField(
+                                        value = if (item.customPriceInput.value.isNotBlank()) item.customPriceInput.value else item.defaultSellingPrice.roundToInt().toString(),
+                                        onValueChange = { item.customPriceInput.value = it },
+                                        label = { Text("₱") },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.width(90.dp),
+                                        singleLine = true
                                     )
                                 }
 
-                                OutlinedTextField(
-                                    value = if (item.customPriceInput.value.isNotBlank()) item.customPriceInput.value else item.defaultSellingPrice.roundToInt().toString(),
-                                    onValueChange = { item.customPriceInput.value = it },
-                                    label = { Text("₱") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.width(90.dp),
-                                    singleLine = true
-                                )
+                                if (item.isCheckedState.value) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    if (item.variantType == "COLD_RETAIL" || item.variantType == "COLD_WHOLESALE") {
+                                        Text("🔗 Uses Retail/Case Barcode", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(start = 40.dp))
+                                    } else {
+                                        OutlinedTextField(
+                                            value = item.barcodeState.value,
+                                            onValueChange = { item.barcodeState.value = it },
+                                            label = { Text("Barcode / QR (Optional)", style = MaterialTheme.typography.labelSmall) },
+                                            trailingIcon = {
+                                                if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CAMERA_BARCODE_SCANNER)) {
+                                                    IconButton(onClick = { showScannerForItem = true }) {
+                                                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                                    }
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth().padding(start = 40.dp),
+                                            singleLine = true,
+                                            textStyle = MaterialTheme.typography.bodySmall
+                                        )
+
+                                        if (showScannerForItem) {
+                                            com.example.ministoreapp.ui.components.CameraBarcodeScannerDialog(
+                                                title = "Scan Barcode",
+                                                onDismiss = { showScannerForItem = false },
+                                                onBarcodeScanned = { code ->
+                                                    item.barcodeState.value = code.trim()
+                                                    showScannerForItem = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1615,6 +1767,15 @@ fun AddProductDialog(
 
                     val generatedEntities = selectedItems.map { item ->
                         val finalPrice = item.customPriceInput.value.toDoubleOrNull() ?: item.defaultSellingPrice
+                        val isCase = item.variantType == "WHOLESALE" || item.variantType == "COLD_WHOLESALE"
+                        val bCode = if (item.variantType == "COLD_RETAIL") {
+                            previewItems.find { it.variantType == "RETAIL" }?.barcodeState?.value ?: ""
+                        } else if (item.variantType == "COLD_WHOLESALE") {
+                            previewItems.find { it.variantType == "WHOLESALE" }?.barcodeState?.value ?: ""
+                        } else {
+                            item.barcodeState.value
+                        }
+
                         ProductEntity(
                             groupId = sharedGroupId,
                             comboKey = item.comboKey,
@@ -1631,6 +1792,8 @@ fun AddProductDialog(
                             isWholesaleParent = item.isWholesale,
                             itemsPerWholesalePack = item.itemsPerPack,
                             variantType = item.variantType,
+                            barcode = if (!isCase) bCode else null,
+                            caseBarcode = if (isCase) bCode else null,
                             updatedAt = System.currentTimeMillis()
                         )
                     }
@@ -2265,6 +2428,170 @@ fun CashiersManagementTab(
             },
             shape = RoundedCornerShape(24.dp)
         )
+    }
+}
+
+@Composable
+fun CustomPricingEngineCard(
+    securitySettings: SecuritySettingsEntity,
+    onUpdateSecuritySettings: (SecuritySettingsEntity) -> Unit
+) {
+    var baseMarkupInput by remember(securitySettings) { mutableStateOf(securitySettings.pricingBaseMarkup.roundToInt().toString()) }
+    var bracketSizeInput by remember(securitySettings) { mutableStateOf(securitySettings.pricingBracketSize.roundToInt().toString()) }
+    var markupIncreaseInput by remember(securitySettings) { mutableStateOf(securitySettings.pricingMarkupIncrease.roundToInt().toString()) }
+    var testCostInput by remember { mutableStateOf("8") }
+
+    val baseMarkup = baseMarkupInput.toDoubleOrNull() ?: 3.0
+    val bracketSize = bracketSizeInput.toDoubleOrNull() ?: 5.0
+    val markupIncrease = markupIncreaseInput.toDoubleOrNull() ?: 1.0
+    val testCost = testCostInput.toDoubleOrNull() ?: 8.0
+
+    val testSellingPrice = com.example.ministoreapp.domain.PricingEngine.calculateSellingPrice(
+        cost = testCost,
+        markupType = "FIXED",
+        baseMarkup = baseMarkup,
+        bracketSize = bracketSize,
+        markupIncrease = markupIncrease
+    )
+    val testProfit = testSellingPrice - testCost
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Default.Calculate, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text("Customize Pricing & Markup Calculation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+
+            Text(
+                text = "Configure how suggested selling prices and profit margins are automatically calculated based on item cost brackets:",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Visual Rule Bracket Table
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("📊 Visual Bracket Rule Breakdown:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("• Cost ₱1 – ₱${bracketSize.roundToInt()} ➔ Add +₱${baseMarkup.roundToInt()} profit", style = MaterialTheme.typography.bodySmall)
+                    Text("• Cost ₱${bracketSize.roundToInt() + 1} – ₱${(bracketSize * 2).roundToInt()} ➔ Add +₱${(baseMarkup + markupIncrease).roundToInt()} profit", style = MaterialTheme.typography.bodySmall)
+                    Text("• Cost ₱${(bracketSize * 2).roundToInt() + 1} – ₱${(bracketSize * 3).roundToInt()} ➔ Add +₱${(baseMarkup + markupIncrease * 2).roundToInt()} profit", style = MaterialTheme.typography.bodySmall)
+                    Text("• (Every +₱${bracketSize.roundToInt()} cost step increases profit by +₱${markupIncrease.roundToInt()})", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                }
+            }
+
+            // Bracket Parameter Editors
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = baseMarkupInput,
+                    onValueChange = { baseMarkupInput = it },
+                    label = { Text("Base Profit (₱)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = bracketSizeInput,
+                    onValueChange = { bracketSizeInput = it },
+                    label = { Text("Bracket Size (₱)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = markupIncreaseInput,
+                    onValueChange = { markupIncreaseInput = it },
+                    label = { Text("Step Increase (₱)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+            }
+
+            // Interactive Live Preview
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("💡 Live Preview Calculator:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = testCostInput,
+                            onValueChange = { testCostInput = it },
+                            label = { Text("Cost ₱") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.width(90.dp),
+                            singleLine = true
+                        )
+                        Text(
+                            text = "➔ Suggested Price: ₱${testSellingPrice.roundToInt()} (+₱${testProfit.roundToInt()} profit)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = {
+                        val updated = securitySettings.copy(
+                            pricingBaseMarkup = baseMarkup,
+                            pricingBracketSize = bracketSize,
+                            pricingMarkupIncrease = markupIncrease,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        onUpdateSecuritySettings(updated)
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Save Pricing Rules", fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        baseMarkupInput = "3"
+                        bracketSizeInput = "5"
+                        markupIncreaseInput = "1"
+                        val updated = securitySettings.copy(
+                            pricingBaseMarkup = 3.0,
+                            pricingBracketSize = 5.0,
+                            pricingMarkupIncrease = 1.0,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        onUpdateSecuritySettings(updated)
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Reset to Default", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
     }
 }
 
@@ -3073,6 +3400,11 @@ fun AboutAppPlaceholder() {
     ) {
         Text("About + Update App", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
+        val isDebug = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (isDebug) {
+            DeveloperOptionsCard()
+        }
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
@@ -3162,7 +3494,14 @@ fun AboutAppPlaceholder() {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Latest Release: v${info.version} (Current: v${AppUpdateManager.getCurrentVersion(context)})", fontWeight = FontWeight.SemiBold)
                     if (info.releaseNotes.isNotBlank()) {
-                        Text("Changelog:\n${info.releaseNotes}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 320.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            Text("Changelog:\n${info.releaseNotes}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
 
                     if (isDownloading) {
@@ -3256,5 +3595,233 @@ fun AboutAppPlaceholder() {
             },
             shape = RoundedCornerShape(24.dp)
         )
+    }
+}
+
+@Composable
+fun DeveloperOptionsCard() {
+    val context = LocalContext.current
+    val currentTier by com.example.ministoreapp.domain.FeatureFlagManager.selectedTierFlow.collectAsState()
+    val isMonthlyActive by com.example.ministoreapp.domain.FeatureFlagManager.isSubscriptionActiveFlow.collectAsState()
+    val effectiveTier by com.example.ministoreapp.domain.FeatureFlagManager.effectiveTierFlow.collectAsState()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.BugReport,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+                Text(
+                    text = "Developer Options (Freemium Tiers & Subscription)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            Text(
+                text = "Active Subscription Tier (Effective: ${effectiveTier.name.uppercase()})",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            // Radio Buttons for Free, Standard, Pro
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                com.example.ministoreapp.domain.AppTier.entries.forEach { tier ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { com.example.ministoreapp.domain.FeatureFlagManager.setTier(context, tier) }
+                            .padding(vertical = 4.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentTier == tier,
+                            onClick = { com.example.ministoreapp.domain.FeatureFlagManager.setTier(context, tier) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "${tier.name} Tier",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            val desc = when (tier) {
+                                com.example.ministoreapp.domain.AppTier.FREE -> "Max 20 Customers · No Multi-Size · No Cloud Sync"
+                                com.example.ministoreapp.domain.AppTier.STANDARD -> "Max 100 Customers · Multi-Size · Cloud Sync"
+                                com.example.ministoreapp.domain.AppTier.PRO -> "Unlimited Customers · All Features Unlocked"
+                            }
+                            Text(
+                                text = desc,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider()
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Monthly Subscription Active",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (isMonthlyActive) "Status: Active" else "Status: Inactive (Falls back to FREE tier)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isMonthlyActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                }
+                Switch(
+                    checked = isMonthlyActive,
+                    onCheckedChange = { com.example.ministoreapp.domain.FeatureFlagManager.setMonthlySubscriptionActive(context, it) }
+                )
+            }
+            
+            val isTrialActive by com.example.ministoreapp.domain.FeatureFlagManager.isProFreeTrialActiveFlow.collectAsState()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "1-Month PRO Free Trial Active",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Switch(
+                    checked = isTrialActive,
+                    onCheckedChange = { com.example.ministoreapp.domain.FeatureFlagManager.setProFreeTrialActive(context, it) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun StoreFeaturesAndModulesCard() {
+    val context = LocalContext.current
+    val userToggles by com.example.ministoreapp.domain.FeatureFlagManager.userFeatureTogglesFlow.collectAsState()
+    val effectiveTier by com.example.ministoreapp.domain.FeatureFlagManager.effectiveTierFlow.collectAsState()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Store Features & Modules",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Text(
+                text = "Customize your store UI. Disabled modules are completely hidden to keep your app simple and fast.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            HorizontalDivider()
+
+            com.example.ministoreapp.domain.AppFeature.entries.forEach { feature ->
+                val isTierEligible = effectiveTier.rank >= feature.requiredTier.rank
+                val isUserEnabled = userToggles[feature] ?: feature.defaultEnabled
+                
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            if (isTierEligible) {
+                                com.example.ministoreapp.domain.FeatureFlagManager.setUserFeatureToggle(context, feature, !isUserEnabled)
+                            } else {
+                                Toast.makeText(context, "🔒 Available in SariCloud ${feature.requiredTier.name} (Monthly Subscription - 1-Month Free Pro Trial Available)", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = feature.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isTierEligible) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = when (feature.requiredTier) {
+                                    com.example.ministoreapp.domain.AppTier.FREE -> Color(0xFF10B981).copy(alpha = 0.15f)
+                                    com.example.ministoreapp.domain.AppTier.STANDARD -> Color(0xFF3B82F6).copy(alpha = 0.15f)
+                                    com.example.ministoreapp.domain.AppTier.PRO -> Color(0xFF8B5CF6).copy(alpha = 0.15f)
+                                }
+                            ) {
+                                Text(
+                                    text = feature.requiredTier.name,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = when (feature.requiredTier) {
+                                        com.example.ministoreapp.domain.AppTier.FREE -> Color(0xFF10B981)
+                                        com.example.ministoreapp.domain.AppTier.STANDARD -> Color(0xFF3B82F6)
+                                        com.example.ministoreapp.domain.AppTier.PRO -> Color(0xFF8B5CF6)
+                                    },
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = feature.description,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isTierEligible) 1f else 0.5f)
+                        )
+                    }
+                    Switch(
+                        checked = isTierEligible && isUserEnabled,
+                        onCheckedChange = {
+                            if (isTierEligible) {
+                                com.example.ministoreapp.domain.FeatureFlagManager.setUserFeatureToggle(context, feature, it)
+                            } else {
+                                Toast.makeText(context, "🔒 Available in SariCloud ${feature.requiredTier.name} (Monthly Subscription - 1-Month Free Pro Trial Available)", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        enabled = isTierEligible
+                    )
+                }
+            }
+        }
     }
 }

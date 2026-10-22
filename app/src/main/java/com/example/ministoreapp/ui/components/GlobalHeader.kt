@@ -68,25 +68,27 @@ fun GlobalHeader(
         },
         actions = {
             if (showActions) {
-                IconButton(
-                    onClick = onSyncClick,
-                    enabled = !isSyncing
-                ) {
-                    when {
-                        syncSuccess -> {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Sync Complete",
-                                tint = Color(0xFF83D7A4)
-                            )
-                        }
-                        else -> {
-                            Icon(
-                                imageVector = Icons.Default.Sync,
-                                contentDescription = "Sync Now",
-                                modifier = Modifier.rotate(rotationAngle),
-                                tint = Color.White
-                            )
+                if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CLOUD_SYNC)) {
+                    IconButton(
+                        onClick = onSyncClick,
+                        enabled = !isSyncing
+                    ) {
+                        when {
+                            syncSuccess -> {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Sync Complete",
+                                    tint = Color(0xFF83D7A4)
+                                )
+                            }
+                            else -> {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = "Sync Now",
+                                    modifier = Modifier.rotate(rotationAngle),
+                                    tint = Color.White
+                                )
+                            }
                         }
                     }
                 }

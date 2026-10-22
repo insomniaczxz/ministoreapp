@@ -14,16 +14,20 @@ object PricingEngine {
         cost: Double,
         markupType: String,
         markupValue: Double = 0.0,
-        manualSellingPrice: Double? = null
+        manualSellingPrice: Double? = null,
+        baseMarkup: Double = 3.0,
+        bracketSize: Double = 5.0,
+        markupIncrease: Double = 1.0
     ): Double {
         if (cost <= 0.0) return manualSellingPrice ?: 0.0
 
         return when (markupType.uppercase()) {
             "FIXED" -> {
+                val bSize = if (bracketSize <= 0.0) 5.0 else bracketSize
                 val fixedMarkup = if (cost >= 1.0) {
-                    floor((cost - 1.0) / 5.0) + 3.0
+                    floor((cost - 1.0) / bSize) * markupIncrease + baseMarkup
                 } else {
-                    3.0
+                    baseMarkup
                 }
                 cost + fixedMarkup
             }

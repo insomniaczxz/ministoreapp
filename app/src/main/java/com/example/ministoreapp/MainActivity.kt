@@ -78,6 +78,12 @@ class MainActivity : ComponentActivity() {
 
         db = AppDatabase.getInstance(this)
         syncRepo = SyncRepository(db)
+        com.example.ministoreapp.domain.FeatureFlagManager.init(this)
+
+        val smallestWidth = resources.configuration.smallestScreenWidthDp
+        if (smallestWidth < 600) {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
 
         setContent {
             val prefs = remember { getSharedPreferences("ministore_prefs", MODE_PRIVATE) }
@@ -348,6 +354,7 @@ class MainActivity : ComponentActivity() {
         var isAppUnlocked by remember { mutableStateOf(false) }
         var showSettingsPinPrompt by remember { mutableStateOf(false) }
         var activeSettingsDetailView by remember { mutableStateOf<String?>(null) }
+        var externalBarcode by remember { mutableStateOf<String?>(null) }
 
         // App Launch Security PIN Check
         if (settings.pinOnAppLaunchEnabled && !isAppUnlocked) {
@@ -411,6 +418,9 @@ class MainActivity : ComponentActivity() {
 
         val showHeaderActions = currentTab != TabScreen.Settings
 
+        val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+        val isTabletLayout = configuration.screenWidthDp >= 600 && com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.TABLET_POS_LAYOUT)
+
         Scaffold(
             topBar = {
                 GlobalHeader(
@@ -422,6 +432,11 @@ class MainActivity : ComponentActivity() {
                     syncSuccess = syncSuccess,
                     onSyncClick = {
                         lifecycleScope.launch {
+                            if (!com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CLOUD_SYNC)) {
+                                Toast.makeText(this@MainActivity, "🔒 This feature requires SariCloud ${com.example.ministoreapp.domain.AppFeature.CLOUD_SYNC.requiredTier.name}.", Toast.LENGTH_LONG).show()
+                                return@launch
+                            }
+
                             if (!com.example.ministoreapp.util.NetworkUtils.isNetworkAvailable(this@MainActivity)) {
                                 Toast.makeText(this@MainActivity, "No internet connection. Changes saved locally.", Toast.LENGTH_SHORT).show()
                                 return@launch
@@ -547,80 +562,229 @@ class MainActivity : ComponentActivity() {
                 )
             },
             bottomBar = {
-                val navContainerColor = if (isDarkTheme) {
-                    androidx.compose.ui.graphics.Color(0xFF1B1E1C)
-                } else {
-                    MaterialTheme.colorScheme.surface
-                }
-
-                val todayDayShort = remember { java.text.SimpleDateFormat("E", java.util.Locale.ENGLISH).format(java.util.Date()) }
-                val upcomingVendorCount = remember(vendors, todayDayShort) {
-                    vendors.count { v ->
-                        if (!v.isTruckPanel) false
-                        else if (v.routeScheduleType == "DAILY") true
-                        else if (v.routeScheduleType == "SPECIFIC_DAYS" && v.routeSchedule.isBlank()) false
-                        else v.routeSchedule.contains(todayDayShort, ignoreCase = true) || v.routeSchedule.contains("Daily", ignoreCase = true)
+                if (!isTabletLayout) {
+                    val navContainerColor = if (isDarkTheme) {
+                        androidx.compose.ui.graphics.Color(0xFF1B1E1C)
+                    } else {
+                        MaterialTheme.colorScheme.surface
                     }
-                }
 
-                NavigationBar(
-                    containerColor = navContainerColor
-                ) {
-                    val items = listOf(
-                        TabScreen.Search,
-                        TabScreen.Events,
-                        TabScreen.Credit,
-                        TabScreen.Restock,
-                        TabScreen.Info
-                    )
-                    items.forEach { screen ->
-                        NavigationBarItem(
-                            icon = {
-                                if (screen == TabScreen.Info && upcomingVendorCount > 0) {
-                                    BadgedBox(
-                                        badge = { Badge { Text(upcomingVendorCount.toString()) } }
-                                    ) {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val arrivedVendorIdsToday = remember(vendors, currentTab) {
+                        com.example.ministoreapp.ui.screens.info.getArrivedVendorIdsToday(context)
+                    }
+                    val upcomingVendorCount = remember(vendors, currentTab, arrivedVendorIdsToday) {
+                        vendors.count { v ->
+                            if (!com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.VENDOR_MANAGEMENT)) return@count false
+                            val isScheduled = com.example.ministoreapp.ui.screens.info.isVendorScheduledToday(v)
+                            isScheduled && !arrivedVendorIdsToday.contains(v.id)
+                        }
+                    }
+
+                    NavigationBar(
+                        containerColor = navContainerColor
+                    ) {
+                        val items = buildList {
+                            add(TabScreen.Search)
+                            if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.EVENTS_MODULE)) add(TabScreen.Events)
+                            if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CREDIT_MODULE)) add(TabScreen.Credit)
+                            if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.RESTOCK_MODULE)) add(TabScreen.Restock)
+                            if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.INFO_MODULE)) add(TabScreen.Info)
+                        }
+
+                        if (!items.contains(currentTab) && currentTab != TabScreen.Settings) {
+                            currentTab = TabScreen.Search
+                        }
+
+                        items.forEach { screen ->
+                            NavigationBarItem(
+                                icon = {
+                                    if (screen == TabScreen.Info && upcomingVendorCount > 0) {
+                                        BadgedBox(
+                                            badge = { Badge { Text(upcomingVendorCount.toString()) } }
+                                        ) {
+                                            Icon(screen.icon, contentDescription = screen.title)
+                                        }
+                                    } else {
                                         Icon(screen.icon, contentDescription = screen.title)
                                     }
-                                } else {
-                                    Icon(screen.icon, contentDescription = screen.title)
-                                }
-                            },
-                            label = { Text(screen.title) },
-                            selected = currentTab == screen,
-                            onClick = {
-                                if (screen == TabScreen.Settings) {
-                                    if (settings.pinOnSettingsOpeningEnabled && currentTab != TabScreen.Settings) {
-                                        showSettingsPinPrompt = true
+                                },
+                                label = { Text(screen.title) },
+                                selected = currentTab == screen,
+                                onClick = {
+                                    if (screen == TabScreen.Settings) {
+                                        if (settings.pinOnSettingsOpeningEnabled && currentTab != TabScreen.Settings) {
+                                            showSettingsPinPrompt = true
+                                        } else {
+                                            activeSettingsDetailView = null
+                                            currentTab = TabScreen.Settings
+                                        }
                                     } else {
-                                        activeSettingsDetailView = null
-                                        currentTab = TabScreen.Settings
+                                        currentTab = screen
                                     }
-                                } else {
-                                    currentTab = screen
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
         ) { innerPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
+            Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                if (isTabletLayout) {
+                    val navContainerColor = if (isDarkTheme) {
+                        androidx.compose.ui.graphics.Color(0xFF1B1E1C)
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    }
+
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val arrivedVendorIdsToday = remember(vendors, currentTab) {
+                        com.example.ministoreapp.ui.screens.info.getArrivedVendorIdsToday(context)
+                    }
+                    val upcomingVendorCount = remember(vendors, currentTab, arrivedVendorIdsToday) {
+                        vendors.count { v ->
+                            if (!com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.VENDOR_MANAGEMENT)) return@count false
+                            val isScheduled = com.example.ministoreapp.ui.screens.info.isVendorScheduledToday(v)
+                            isScheduled && !arrivedVendorIdsToday.contains(v.id)
+                        }
+                    }
+
+                    NavigationRail(
+                        containerColor = navContainerColor
+                    ) {
+                        val items = buildList {
+                            add(TabScreen.Search)
+                            if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.EVENTS_MODULE)) add(TabScreen.Events)
+                            if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CREDIT_MODULE)) add(TabScreen.Credit)
+                            if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.RESTOCK_MODULE)) add(TabScreen.Restock)
+                            if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.INFO_MODULE)) add(TabScreen.Info)
+                        }
+
+                        if (!items.contains(currentTab) && currentTab != TabScreen.Settings) {
+                            currentTab = TabScreen.Search
+                        }
+
+                        items.forEach { screen ->
+                            NavigationRailItem(
+                                icon = {
+                                    if (screen == TabScreen.Info && upcomingVendorCount > 0) {
+                                        BadgedBox(
+                                            badge = { Badge { Text(upcomingVendorCount.toString()) } }
+                                        ) {
+                                            Icon(screen.icon, contentDescription = screen.title)
+                                        }
+                                    } else {
+                                        Icon(screen.icon, contentDescription = screen.title)
+                                    }
+                                },
+                                label = { Text(screen.title) },
+                                selected = currentTab == screen,
+                                onClick = {
+                                    if (screen == TabScreen.Settings) {
+                                        if (settings.pinOnSettingsOpeningEnabled && currentTab != TabScreen.Settings) {
+                                            showSettingsPinPrompt = true
+                                        } else {
+                                            activeSettingsDetailView = null
+                                            currentTab = TabScreen.Settings
+                                        }
+                                    } else {
+                                        currentTab = screen
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                ) {
                 when (currentTab) {
                     TabScreen.Search -> SearchScreen(
                         products = products,
                         productGroups = productGroups,
+                        cashiers = cashiers,
                         searchQuery = searchQuery,
                         onSearchQueryChange = { searchQuery = it },
                         onAddToOrder = { restockItem ->
                             lifecycleScope.launch {
                                 db.restockItemDao().insertRestockItem(restockItem)
                             }
-                        }
+                        },
+                        onCheckoutCashSale = { items, total, cashTendered, change ->
+                            lifecycleScope.launch {
+                                items.forEach { cartItem ->
+                                    val newStock = (cartItem.product.stockQty - cartItem.quantity).coerceAtLeast(0)
+                                    db.productDao().updateProduct(cartItem.product.copy(stockQty = newStock, updatedAt = System.currentTimeMillis()))
+                                }
+                                val summary = items.joinToString(", ") { "${it.product.name} x${it.quantity}" }
+                                val firstCashier = cashiers.firstOrNull()
+                                val cashierId = firstCashier?.id ?: "default_owner"
+                                val cashierName = firstCashier?.name ?: "Store Owner"
+                                
+                                db.eventDao().insertEvent(
+                                    com.example.ministoreapp.data.local.entities.EventEntity(
+                                        type = "BUY",
+                                        description = "POS Cash Sale: $summary",
+                                        total = total,
+                                        cashierId = cashierId,
+                                        cashierName = cashierName
+                                    )
+                                )
+                                db.auditLogDao().insertAuditLog(
+                                    AuditLogEntity(
+                                        cashierId = cashierId,
+                                        cashierName = cashierName,
+                                        actionType = "POS_CHECKOUT",
+                                        description = "Completed Cash Checkout (₱${total.roundToInt()}, Tendered: ₱${cashTendered.roundToInt()}, Change: ₱${change.roundToInt()})"
+                                    )
+                                )
+                                Toast.makeText(this@MainActivity, "Cash Checkout Complete! Change: ₱${change.roundToInt()}", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        onChargeToUtangRequested = { _, _ ->
+                            currentTab = TabScreen.Credit
+                            Toast.makeText(this@MainActivity, "Select customer in Credit tab to issue credit...", Toast.LENGTH_SHORT).show()
+                        },
+                        onAddNewProductRequested = { scannedBarcode ->
+                            externalBarcode = scannedBarcode
+                            activeSettingsDetailView = "PRODUCTS"
+                            currentTab = TabScreen.Settings
+                            Toast.makeText(this@MainActivity, "Opening Add Product for barcode '$scannedBarcode'...", Toast.LENGTH_SHORT).show()
+                        },
+                        onLinkProductBarcode = { product, code, isCase ->
+                            lifecycleScope.launch {
+                                val updated = if (isCase) {
+                                    product.copy(caseBarcode = code, updatedAt = System.currentTimeMillis())
+                                } else {
+                                    product.copy(barcode = code, updatedAt = System.currentTimeMillis())
+                                }
+                                db.productDao().updateProduct(updated)
+                                product.groupId?.let { gId ->
+                                    val group = db.productGroupDao().getGroupById(gId)
+                                    if (group != null) {
+                                        val updatedGroup = if (isCase) group.copy(caseBarcode = code, updatedAt = System.currentTimeMillis()) else group.copy(barcode = code, updatedAt = System.currentTimeMillis())
+                                        db.productGroupDao().insertGroup(updatedGroup)
+                                    }
+                                }
+                                val firstCashier = cashiers.firstOrNull()
+                                val cashierId = firstCashier?.id ?: "default_owner"
+                                val cashierName = firstCashier?.name ?: "Store Owner"
+                                db.auditLogDao().insertAuditLog(
+                                    AuditLogEntity(
+                                        cashierId = cashierId,
+                                        cashierName = cashierName,
+                                        actionType = "LINK_BARCODE",
+                                        description = "Linked barcode '$code' (${if (isCase) "Wholesale Case" else "Unit/Bottle"}) to item '${product.name}'"
+                                    )
+                                )
+                                Toast.makeText(this@MainActivity, "Linked barcode '$code' to '${product.name}'!", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        externalScannedBarcode = externalBarcode,
+                        onExternalBarcodeConsumed = { externalBarcode = null }
                     )
                     TabScreen.Events -> EventsScreen(
                         events = events,
@@ -760,6 +924,40 @@ class MainActivity : ComponentActivity() {
                             lifecycleScope.launch {
                                 db.restockItemDao().clearRestockItems()
                             }
+                        },
+                        onAddRestockItem = { item ->
+                            lifecycleScope.launch {
+                                db.restockItemDao().insertRestockItem(item)
+                                val matchedProd = products.find { it.name.equals(item.name, ignoreCase = true) }
+                                if (matchedProd != null) {
+                                    val newStock = matchedProd.stockQty + item.quantity
+                                    db.productDao().updateProduct(matchedProd.copy(stockQty = newStock, updatedAt = System.currentTimeMillis()))
+                                }
+                                val firstCashier = cashiers.firstOrNull()
+                                val cashierId = firstCashier?.id ?: "default_owner"
+                                val cashierName = firstCashier?.name ?: "Store Owner"
+                                if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.EVENTS_MODULE)) {
+                                    db.eventDao().insertEvent(
+                                        com.example.ministoreapp.data.local.entities.EventEntity(
+                                            type = "BUY",
+                                            description = "Restock Purchase: ${item.name} x${item.quantity}",
+                                            cost = item.cost,
+                                            total = item.cost * item.quantity,
+                                            cashierId = cashierId,
+                                            cashierName = cashierName
+                                        )
+                                    )
+                                }
+                                db.auditLogDao().insertAuditLog(
+                                    AuditLogEntity(
+                                        cashierId = cashierId,
+                                        cashierName = cashierName,
+                                        actionType = "RESTOCK_ADD",
+                                        description = "Added ${item.quantity} pcs of '${item.name}' to restock list & stock"
+                                    )
+                                )
+                                Toast.makeText(this@MainActivity, "Added ${item.quantity} pcs of '${item.name}' to restock!", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     )
                     TabScreen.Info -> InfoScreen(
@@ -771,12 +969,27 @@ class MainActivity : ComponentActivity() {
                         creditTransactions = creditTransactions,
                         customers = customers,
                         wholesaleProducts = products.filter { it.isWholesaleParent },
-                        auditLogs = auditLogs
+                        auditLogs = auditLogs,
+                        cashiers = cashiers,
+                        onMarkVendorArrived = { vendor, cashier ->
+                            lifecycleScope.launch {
+                                db.auditLogDao().insertAuditLog(
+                                    AuditLogEntity(
+                                        cashierId = cashier.id,
+                                        cashierName = cashier.name,
+                                        actionType = "VENDOR_ARRIVED",
+                                        description = "Vendor delivery truck '${vendor.name}' marked as arrived."
+                                    )
+                                )
+                                Toast.makeText(this@MainActivity, "Marked delivery for '${vendor.name}' as arrived!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     )
                     TabScreen.Settings -> SettingsScreen(
                         activeDetailView = activeSettingsDetailView,
                         onActiveDetailViewChange = { activeSettingsDetailView = it },
                         securitySettings = securitySettings,
+                        initialBarcode = externalBarcode ?: "",
                         products = products,
                         productGroups = productGroups,
                         cashiers = cashiers,
@@ -1087,4 +1300,5 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
 }

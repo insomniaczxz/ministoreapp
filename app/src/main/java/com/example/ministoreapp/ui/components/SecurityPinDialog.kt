@@ -25,6 +25,13 @@ fun SecurityPinDialog(
     onDismiss: () -> Unit,
     onSuccess: () -> Unit
 ) {
+    if (!com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CASHIER_SECURITY_PIN)) {
+        LaunchedEffect(Unit) {
+            onSuccess()
+        }
+        return
+    }
+
     var enteredPin by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 

@@ -35,6 +35,9 @@ data class ProductGroupEntity(
     val coldRetailMarkup: Double = 0.0,
     val coldCaseMarkup: Double = 0.0,
     val excludedKeys: String = "", // Comma-separated list of comboKey strings excluded/deleted
+    val barcode: String? = null,
+    val caseBarcode: String? = null,
+    val stockQty: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
@@ -64,6 +67,9 @@ data class ProductEntity(
     val isWholesaleParent: Boolean = false,
     val itemsPerWholesalePack: Int? = null,
     val variantType: String? = null, // e.g. "WHOLESALE", "RETAIL", "COLD_RETAIL", "COLD_WHOLESALE", or variant tag
+    val barcode: String? = null,
+    val caseBarcode: String? = null,
+    val stockQty: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
@@ -93,6 +99,10 @@ data class SecuritySettingsEntity(
     val pinOnAppLaunchEnabled: Boolean = true,
     val pinOnSettingsOpeningEnabled: Boolean = true,
     val isDarkMode: Boolean = false,
+    val hasClaimedFreeTrial: Boolean = false,
+    val pricingBaseMarkup: Double = 3.0,
+    val pricingBracketSize: Double = 5.0,
+    val pricingMarkupIncrease: Double = 1.0,
     val updatedAt: Long = System.currentTimeMillis()
 )
 

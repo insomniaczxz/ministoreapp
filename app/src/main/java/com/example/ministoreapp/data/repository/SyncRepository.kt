@@ -24,7 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 data class DatabaseChangeset(
-    val schemaVersion: Int = 3,
+    val schemaVersion: Int = 4,
     val exportedAt: Long = System.currentTimeMillis(),
     val isDarkMode: Boolean = false,
     val securitySettings: SecuritySettingsEntity? = null,
@@ -55,7 +55,7 @@ class SyncRepository(private val db: AppDatabase) {
         val isDarkMode = prefs.getBoolean("dark_theme_enabled", false)
         val sevenDaysAgo = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L)
         val changeset = DatabaseChangeset(
-            schemaVersion = 3,
+            schemaVersion = 4,
             exportedAt = System.currentTimeMillis(),
             isDarkMode = isDarkMode,
             securitySettings = db.securitySettingsDao().getSettings(),

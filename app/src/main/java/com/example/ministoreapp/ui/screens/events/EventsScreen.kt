@@ -5,6 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -358,11 +361,16 @@ fun EventsScreen(
                 }
             }
         } else {
-            LazyColumn(
+            val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+            val isTabletLayout = configuration.screenWidthDp >= 600 && com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.TABLET_POS_LAYOUT)
+
+            LazyVerticalGrid(
+                columns = if (isTabletLayout) GridCells.Adaptive(minSize = 340.dp) else GridCells.Fixed(1),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(displayedEvents, key = { it.id }) { event ->
+                items(items = displayedEvents, key = { it.id }) { event ->
                     EventCardFeedItem(
                         event = event,
                         onSettleClick = { eventToSettle = event },
