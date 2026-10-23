@@ -13,23 +13,24 @@ enum class AppTier(val rank: Int) {
 }
 
 enum class AppFeature(val title: String, val description: String, val requiredTier: AppTier, val defaultEnabled: Boolean = true) {
-    EVENTS_MODULE("Events & Tasks", "Daily store logs, fund in/out, and task tracking", AppTier.PRO),
+    EVENTS_MODULE("Events & Tasks", "Daily store logs, fund in/out, and task tracking", AppTier.FREE),
     CREDIT_MODULE("Credit (Utang) Ledger", "Customer credit tracking and payment settlement", AppTier.FREE),
-    RESTOCK_MODULE("Restock & Inventory", "Restock lists and quick '+ Restock' buttons on search cards", AppTier.STANDARD),
-    INFO_MODULE("Store Info & Audit Logs", "Activity logs, store directory, and audit history", AppTier.STANDARD),
-    ORDERS_MODULE("Orders Management", "Order tracking and management screen", AppTier.PRO),
+    RESTOCK_MODULE("Restock List & Management", "Restock shopping tab, 'Restock' buttons, and delivery logging", AppTier.FREE, defaultEnabled = true),
+    INVENTORY_TRACKING("Live Inventory & Stock Counts", "Track exact stock quantities on product cards and auto-deduct stock on checkout/utang", AppTier.FREE, defaultEnabled = false),
+    INFO_MODULE("Store Info & Audit Logs", "Activity logs, store directory, and audit history", AppTier.FREE),
+    ORDERS_MODULE("Orders Management", "Order tracking and management screen", AppTier.FREE),
     ADVANCED_PRICE_VARIANTS("Cold, Case & Bundle Pricing", "Support Cold, Wholesale Case, and Bundle price tags", AppTier.FREE),
-    PROFIT_AND_PRICING_ENGINE("Cost & Profit Calculator", "Automatic profit margin and pricing calculations when adding products", AppTier.STANDARD),
-    RECOMMENDATION_ENGINE("Smart Restock & Store Recommendations", "Automated product and restock recommendations", AppTier.PRO),
-    VENDOR_MANAGEMENT("Vendor Directory", "Manage suppliers and link vendors to products", AppTier.STANDARD),
-    CASHIER_SECURITY_PIN("Cashier & Security PIN", "Require Cashier verification and PIN for sensitive store actions", AppTier.STANDARD),
+    PROFIT_AND_PRICING_ENGINE("Cost & Profit Calculator", "Automatic profit margin and pricing calculations when adding products", AppTier.FREE),
+    RECOMMENDATION_ENGINE("Smart Restock & Store Recommendations", "Automated product and restock recommendations", AppTier.FREE),
+    VENDOR_MANAGEMENT("Vendor Directory", "Manage suppliers and link vendors to products", AppTier.FREE),
+    CASHIER_SECURITY_PIN("Cashier & Security PIN", "Require Cashier verification and PIN for sensitive store actions", AppTier.FREE),
     CUSTOM_DROPDOWNS("Custom Categories & Dropdowns", "Manage custom categories, containers, and search filters", AppTier.FREE),
-    CLOUD_SYNC("Google Drive Cloud Sync", "Automatic cloud backup and multi-device sync", AppTier.STANDARD),
-    CUSTOMER_BAN_LIST("Customer Credit Ban List", "Block restricted customers from taking new credit", AppTier.PRO),
-    AUDIT_LOGS("Audit Logs View", "Dedicated view to audit cashier actions", AppTier.STANDARD),
+    CLOUD_SYNC("Google Drive Cloud Sync", "Automatic cloud backup and multi-device sync", AppTier.FREE),
+    CUSTOMER_BAN_LIST("Customer Credit Ban List", "Block restricted customers from taking new credit", AppTier.FREE),
+    AUDIT_LOGS("Audit Logs View", "Dedicated view to audit cashier actions", AppTier.FREE),
     TABLET_POS_LAYOUT("Tablet & Landscape POS Layout", "Multi-column product grids, side navigation rail, and split-screen layouts for tablets", AppTier.FREE),
-    CAMERA_BARCODE_SCANNER("Camera Barcode Scanner", "Use device camera to scan product barcodes during search, POS checkout, credit, and restocking", AppTier.STANDARD),
-    EXTERNAL_BARCODE_SCANNER("External USB / Bluetooth Scanner", "Support plug-and-play handheld USB OTG and Bluetooth HID barcode scanners for counter POS", AppTier.PRO),
+    CAMERA_BARCODE_SCANNER("Camera Barcode Scanner", "Use device camera to scan product barcodes during search, POS checkout, credit, and restocking", AppTier.FREE),
+    EXTERNAL_BARCODE_SCANNER("External USB / Bluetooth Scanner", "Support plug-and-play handheld USB OTG and Bluetooth HID barcode scanners for counter POS", AppTier.FREE),
     POS_CART_CHECKOUT("POS Cart & Quick Checkout", "Build multi-item carts from Search for cash checkout or direct Utang charging", AppTier.FREE)
 }
 
@@ -114,13 +115,8 @@ object FeatureFlagManager {
     val effectiveTier: AppTier get() = _effectiveTierFlow.value
 
     fun isFeatureActive(feature: AppFeature): Boolean {
-        val userEnabled = _userFeatureTogglesFlow.value[feature] ?: feature.defaultEnabled
-        return (effectiveTier.rank >= feature.requiredTier.rank) && userEnabled
+        return _userFeatureTogglesFlow.value[feature] ?: feature.defaultEnabled
     }
 
-    fun maxCustomersAllowed(): Int = when (effectiveTier) {
-        AppTier.FREE -> 20
-        AppTier.STANDARD -> 100
-        AppTier.PRO -> Int.MAX_VALUE
-    }
+    fun maxCustomersAllowed(): Int = Int.MAX_VALUE
 }

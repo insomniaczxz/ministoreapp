@@ -109,6 +109,7 @@ fun SettingsScreen(
     onSwitchGoogleAccount: () -> Unit = {},
     googleAccountEmail: String? = null,
     initialBarcode: String = "",
+    onPendingBarcodeConsumed: () -> Unit = {},
     onUpdateSecuritySettings: (SecuritySettingsEntity) -> Unit
 ) {
     val context = LocalContext.current
@@ -133,6 +134,7 @@ fun SettingsScreen(
                         products = products,
                         productGroups = productGroups,
                         initialBarcode = initialBarcode,
+                        onPendingBarcodeConsumed = onPendingBarcodeConsumed,
                         cashiers = cashiers,
                         categories = categories,
                         brands = brands,
@@ -375,7 +377,7 @@ fun SettingsScreen(
                     val installedVersion = remember { AppUpdateManager.getCurrentVersion(context) }
                     var latestGithubVersion by remember { mutableStateOf("Checking...") }
                     var downloadUrl by remember { mutableStateOf<String?>(null) }
-                    
+
                     LaunchedEffect(Unit) {
                         val result = AppUpdateManager.fetchLatestRelease(context)
                         if (result.isSuccess) {
@@ -487,6 +489,7 @@ fun ProductsManagementTab(
     products: List<ProductEntity>,
     productGroups: List<ProductGroupEntity> = emptyList(),
     initialBarcode: String = "",
+    onPendingBarcodeConsumed: () -> Unit = {},
     cashiers: List<CashierEntity>,
     categories: List<CategoryEntity>,
     brands: List<BrandEntity>,
@@ -505,6 +508,15 @@ fun ProductsManagementTab(
     var filterQuery by remember { mutableStateOf("") }
     var showAddProductDialog by remember { mutableStateOf(false) }
     var editingProductGroup by remember { mutableStateOf<ProductGroupEntity?>(null) }
+    var activeDialogInitialBarcode by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(initialBarcode) {
+        if (initialBarcode.isNotBlank()) {
+            activeDialogInitialBarcode = initialBarcode
+            showAddProductDialog = true
+            onPendingBarcodeConsumed()
+        }
+    }
 
     var verifySingleDeleteProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var verifyGroupDeleteId by remember { mutableStateOf<String?>(null) }
@@ -710,7 +722,7 @@ fun ProductsManagementTab(
         AddProductDialog(
             existingGroup = editingProductGroup,
             existingProductsForGroup = matchingProds,
-            initialBarcode = initialBarcode,
+            initialBarcode = activeDialogInitialBarcode ?: "",
             securitySettings = securitySettings,
             cashiers = cashiers,
             categories = categories,
@@ -724,12 +736,14 @@ fun ProductsManagementTab(
             onDismiss = {
                 showAddProductDialog = false
                 editingProductGroup = null
+                activeDialogInitialBarcode = null
             },
             onSaveGroup = { group, generatedItems, cashier, isDiffSize ->
                 onSaveProductGroup(group, generatedItems, cashier)
                 if (!isDiffSize) {
                     showAddProductDialog = false
                     editingProductGroup = null
+                    activeDialogInitialBarcode = null
                 }
             }
         )
@@ -1070,6 +1084,7 @@ fun AutoCompletableOutlinedTextField(
 
 data class PreviewItem(
     val comboKey: String,
+    val rowKey: String = "",
     val displayName: String,
     val unitSize: String,
     val unit: String,
@@ -1097,6 +1112,11 @@ fun buildProductNames(baseName: String, variantsInput: String): List<String> {
     }
 }
 
+fun formatCostDisplay(cost: Double): String {
+    if (cost <= 0.0) return ""
+    return if (cost % 1.0 == 0.0) cost.roundToInt().toString() else cost.toString()
+}
+
 @Composable
 fun AddProductDialog(
     existingGroup: ProductGroupEntity? = null,
@@ -1116,6 +1136,8 @@ fun AddProductDialog(
     onSaveGroup: (group: ProductGroupEntity, generatedItems: List<ProductEntity>, cashier: CashierEntity, isDiffSize: Boolean) -> Unit
 ) {
     var baseName by remember { mutableStateOf(existingGroup?.baseName ?: "") }
+    var defaultRetailBarcode by remember(initialBarcode) { mutableStateOf(initialBarcode) }
+    val variantBarcodesMap = remember { mutableStateMapOf<String, String>() }
 
     // Track the persistent group ID and base name tracking for Diff Size saves
     val persistentGroupId = remember { mutableStateOf(existingGroup?.id ?: UUID.randomUUID().toString()) }
@@ -1142,7 +1164,7 @@ fun AddProductDialog(
     // Block 2: Wholesale (Defaults cleared)
     var hasWholesale by remember { mutableStateOf(existingGroup?.hasWholesale ?: false) }
     var wholesaleUnit by remember { mutableStateOf(existingGroup?.wholesaleUnit ?: "") }
-    var wholesaleCostInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.wholesaleCost > 0) existingGroup.wholesaleCost.roundToInt().toString() else "") }
+    var wholesaleCostInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.wholesaleCost > 0) formatCostDisplay(existingGroup.wholesaleCost) else "") }
     var itemsPerPackInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.itemsPerPack > 0) existingGroup.itemsPerPack.toString() else "") }
     var wholesaleMarkupType by remember { mutableStateOf("FIXED") }
     var wholesaleMarkupInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.wholesaleMarkupValue > 0) existingGroup.wholesaleMarkupValue.roundToInt().toString() else "") }
@@ -1151,7 +1173,7 @@ fun AddProductDialog(
 
     // Block 3: Retail / Per Piece (Retail Fixed Markup Removed) & Tingi Bundle Pricing
     var hasRetail by remember { mutableStateOf(existingGroup?.hasRetail ?: true) }
-    var retailCostInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.retailCost > 0) existingGroup.retailCost.roundToInt().toString() else "") }
+    var retailCostInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.retailCost > 0) formatCostDisplay(existingGroup.retailCost) else "") }
     var retailMarkupInput by remember { mutableStateOf(if (existingGroup != null && existingGroup.retailMarkupValue > 0) existingGroup.retailMarkupValue.roundToInt().toString() else "") }
 
     var hasBundle by remember { mutableStateOf(existingGroup?.bundlePrice != null && existingGroup.bundlePrice > 0) }
@@ -1244,13 +1266,13 @@ fun AddProductDialog(
         val bQty = if (hasBundle) bundleQtyInput.toIntOrNull() ?: 1 else 1
         val bPrice = if (hasBundle) bundlePriceInput.toDoubleOrNull() ?: 0.0 else 0.0
 
-        generatedNames.forEach { name ->
+        generatedNames.forEachIndexed { variantIdx, name ->
             val sizePackagingText = buildString {
                 if (unitSize.isNotBlank()) append(" $unitSize")
                 if (containerType.isNotBlank()) append(" $containerType")
             }
 
-            // Helper to extract saved barcode/price
+            // Helper to extract saved item
             fun getSavedItem(key: String): ProductEntity? {
                 return existingProductsForGroup.find { it.comboKey == key }
             }
@@ -1258,10 +1280,18 @@ fun AddProductDialog(
             // 1. Wholesale Case
             if (hasWholesale && showWholesaleInSearch && wholesaleCost > 0) {
                 val comboKey = "${name}_wholesale_reg"
+                val rowKey = "variant_${variantIdx}_WHOLESALE"
                 val saved = getSavedItem(comboKey)
+                val savedBc = saved?.caseBarcode ?: saved?.barcode
+                val activeBc = variantBarcodesMap[rowKey] ?: savedBc ?: (if (variantIdx == 0 && !hasRetail && defaultRetailBarcode.isNotBlank()) defaultRetailBarcode else "")
+                if (!variantBarcodesMap.containsKey(rowKey) && activeBc.isNotBlank()) {
+                    variantBarcodesMap[rowKey] = activeBc
+                }
+
                 list.add(
                     PreviewItem(
                         comboKey = comboKey,
+                        rowKey = rowKey,
                         displayName = "$name$sizePackagingText (1 ${wholesaleUnit.ifBlank { "Case" }})",
                         unitSize = if (itemsPerPack > 1) "$itemsPerPack pcs" else unitSize,
                         unit = wholesaleUnit.ifBlank { "Case" },
@@ -1272,16 +1302,19 @@ fun AddProductDialog(
                         itemsPerPack = itemsPerPack,
                         isCheckedState = mutableStateOf(!excludedKeysList.contains(comboKey)),
                         customPriceInput = mutableStateOf(saved?.manualSellingPrice?.roundToInt()?.toString() ?: ""),
-                        barcodeState = mutableStateOf(saved?.barcode ?: saved?.caseBarcode ?: "")
+                        barcodeState = mutableStateOf(variantBarcodesMap[rowKey] ?: activeBc)
                     )
                 )
 
                 if (isBeverage && coldCasePrice > 0) {
                     val coldComboKey = "${name}_wholesale_cold"
+                    val coldRowKey = "variant_${variantIdx}_COLD_WHOLESALE"
                     val coldSaved = getSavedItem(coldComboKey)
+                    val coldBc = coldSaved?.caseBarcode ?: coldSaved?.barcode ?: variantBarcodesMap[rowKey] ?: ""
                     list.add(
                         PreviewItem(
                             comboKey = coldComboKey,
+                            rowKey = coldRowKey,
                             displayName = "$name$sizePackagingText (COLD) (1 ${wholesaleUnit.ifBlank { "Case" }})",
                             unitSize = if (itemsPerPack > 1) "$itemsPerPack pcs" else unitSize,
                             unit = wholesaleUnit.ifBlank { "Case" },
@@ -1292,7 +1325,7 @@ fun AddProductDialog(
                             itemsPerPack = itemsPerPack,
                             isCheckedState = mutableStateOf(!excludedKeysList.contains(coldComboKey)),
                             customPriceInput = mutableStateOf(coldSaved?.manualSellingPrice?.roundToInt()?.toString() ?: ""),
-                            barcodeState = mutableStateOf(coldSaved?.barcode ?: coldSaved?.caseBarcode ?: "")
+                            barcodeState = mutableStateOf(coldBc)
                         )
                     )
                 }
@@ -1304,10 +1337,18 @@ fun AddProductDialog(
 
                 // Add Retail Base (1 Piece)
                 val retailComboKey = "${name}_main_reg"
+                val rowKey = "variant_${variantIdx}_RETAIL"
                 val retailSaved = getSavedItem(retailComboKey)
+                val savedBc = retailSaved?.barcode
+                val activeBc = variantBarcodesMap[rowKey] ?: savedBc ?: (if (variantIdx == 0 && defaultRetailBarcode.isNotBlank()) defaultRetailBarcode else "")
+                if (!variantBarcodesMap.containsKey(rowKey) && activeBc.isNotBlank()) {
+                    variantBarcodesMap[rowKey] = activeBc
+                }
+
                 list.add(
                     PreviewItem(
                         comboKey = retailComboKey,
+                        rowKey = rowKey,
                         displayName = "$name$sizePackagingText (1 $pieceUnitText)",
                         unitSize = unitSize,
                         unit = pieceUnitText,
@@ -1318,17 +1359,25 @@ fun AddProductDialog(
                         itemsPerPack = 1,
                         isCheckedState = mutableStateOf(!excludedKeysList.contains(retailComboKey)),
                         customPriceInput = mutableStateOf(retailSaved?.manualSellingPrice?.roundToInt()?.toString() ?: ""),
-                        barcodeState = mutableStateOf(retailSaved?.barcode ?: "")
+                        barcodeState = mutableStateOf(variantBarcodesMap[rowKey] ?: activeBc)
                     )
                 )
 
                 // Add Tingi Bundle Price if defined and not identical to single piece
                 if (hasBundle && bPrice > 0 && !(bQty == 1 && bPrice == retailSellingPrice)) {
                     val bundleComboKey = "${name}_bundle"
+                    val bundleRowKey = "variant_${variantIdx}_BUNDLE"
                     val bundleSaved = getSavedItem(bundleComboKey)
+                    val savedBc = bundleSaved?.barcode
+                    val activeBc = variantBarcodesMap[bundleRowKey] ?: savedBc ?: ""
+                    if (!variantBarcodesMap.containsKey(bundleRowKey) && activeBc.isNotBlank()) {
+                        variantBarcodesMap[bundleRowKey] = activeBc
+                    }
+
                     list.add(
                         PreviewItem(
                             comboKey = bundleComboKey,
+                            rowKey = bundleRowKey,
                             displayName = "$name$sizePackagingText ($bQty for ₱${bPrice.roundToInt()})",
                             unitSize = unitSize,
                             unit = pieceUnitText,
@@ -1339,17 +1388,20 @@ fun AddProductDialog(
                             itemsPerPack = bQty,
                             isCheckedState = mutableStateOf(!excludedKeysList.contains(bundleComboKey)),
                             customPriceInput = mutableStateOf(bundleSaved?.manualSellingPrice?.roundToInt()?.toString() ?: ""),
-                            barcodeState = mutableStateOf(bundleSaved?.barcode ?: "")
+                            barcodeState = mutableStateOf(variantBarcodesMap[bundleRowKey] ?: activeBc)
                         )
                     )
                 }
 
                 if (isBeverage && coldRetailPrice > 0) {
                     val coldComboKey = "${name}_main_cold"
+                    val coldRowKey = "variant_${variantIdx}_COLD_RETAIL"
                     val coldSaved = getSavedItem(coldComboKey)
+                    val coldBc = coldSaved?.barcode ?: variantBarcodesMap[rowKey] ?: ""
                     list.add(
                         PreviewItem(
                             comboKey = coldComboKey,
+                            rowKey = coldRowKey,
                             displayName = "$name$sizePackagingText (COLD) (1 $pieceUnitText)",
                             unitSize = unitSize,
                             unit = pieceUnitText,
@@ -1360,7 +1412,7 @@ fun AddProductDialog(
                             itemsPerPack = 1,
                             isCheckedState = mutableStateOf(!excludedKeysList.contains(coldComboKey)),
                             customPriceInput = mutableStateOf(coldSaved?.manualSellingPrice?.roundToInt()?.toString() ?: ""),
-                            barcodeState = mutableStateOf(coldSaved?.barcode ?: "")
+                            barcodeState = mutableStateOf(coldBc)
                         )
                     )
                 }
@@ -1567,7 +1619,15 @@ fun AddProductDialog(
                                     } else {
                                         OutlinedTextField(
                                             value = item.barcodeState.value,
-                                            onValueChange = { item.barcodeState.value = it },
+                                            onValueChange = { newBc ->
+                                                item.barcodeState.value = newBc
+                                                if (item.rowKey.isNotBlank()) {
+                                                    variantBarcodesMap[item.rowKey] = newBc
+                                                    if (item.rowKey == "variant_0_RETAIL" || (item.rowKey == "variant_0_WHOLESALE" && !hasRetail)) {
+                                                        defaultRetailBarcode = newBc
+                                                    }
+                                                }
+                                            },
                                             label = { Text("Barcode / QR (Optional)", style = MaterialTheme.typography.labelSmall) },
                                             trailingIcon = {
                                                 if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.CAMERA_BARCODE_SCANNER)) {
@@ -1587,7 +1647,14 @@ fun AddProductDialog(
                                                 title = "Scan Barcode",
                                                 onDismiss = { showScannerForItem = false },
                                                 onBarcodeScanned = { code ->
-                                                    item.barcodeState.value = code.trim()
+                                                    val cleanCode = code.trim()
+                                                    item.barcodeState.value = cleanCode
+                                                    if (item.rowKey.isNotBlank()) {
+                                                        variantBarcodesMap[item.rowKey] = cleanCode
+                                                        if (item.rowKey == "variant_0_RETAIL" || (item.rowKey == "variant_0_WHOLESALE" && !hasRetail)) {
+                                                            defaultRetailBarcode = cleanCode
+                                                        }
+                                                    }
                                                     showScannerForItem = false
                                                 }
                                             )
@@ -1701,7 +1768,7 @@ fun AddProductDialog(
 
             if (pendingSaveMode == "DIFF_SIZE") {
                 lastSavedBaseName = baseName
-                // Keep the exact same ID so next size registers under the same group!
+                persistentGroupId.value = UUID.randomUUID().toString()
                 unitSize = ""
                 containerType = ""
                 wholesaleCostInput = ""
@@ -1710,6 +1777,8 @@ fun AddProductDialog(
                 retailMarkupInput = ""
                 bundleQtyInput = ""
                 bundlePriceInput = ""
+                defaultRetailBarcode = ""
+                variantBarcodesMap.clear()
                 pendingSaveMode = null
             } else {
                 pendingSaveMode = null
@@ -1802,7 +1871,7 @@ fun AddProductDialog(
 
                     if (pendingSaveMode == "DIFF_SIZE") {
                         lastSavedBaseName = baseName
-                        // Keep the exact same ID so next size registers under the same group!
+                        persistentGroupId.value = UUID.randomUUID().toString()
                         unitSize = ""
                         containerType = ""
                         wholesaleCostInput = ""
@@ -1811,6 +1880,8 @@ fun AddProductDialog(
                         retailMarkupInput = ""
                         bundleQtyInput = ""
                         bundlePriceInput = ""
+                        defaultRetailBarcode = ""
+                        variantBarcodesMap.clear()
                         pendingSaveMode = null
                     } else {
                         pendingSaveMode = null
@@ -3756,69 +3827,37 @@ fun StoreFeaturesAndModulesCard() {
             HorizontalDivider()
 
             com.example.ministoreapp.domain.AppFeature.entries.forEach { feature ->
-                val isTierEligible = effectiveTier.rank >= feature.requiredTier.rank
                 val isUserEnabled = userToggles[feature] ?: feature.defaultEnabled
                 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            if (isTierEligible) {
-                                com.example.ministoreapp.domain.FeatureFlagManager.setUserFeatureToggle(context, feature, !isUserEnabled)
-                            } else {
-                                Toast.makeText(context, "🔒 Available in SariCloud ${feature.requiredTier.name} (Monthly Subscription - 1-Month Free Pro Trial Available)", Toast.LENGTH_LONG).show()
-                            }
+                            com.example.ministoreapp.domain.FeatureFlagManager.setUserFeatureToggle(context, feature, !isUserEnabled)
                         }
                         .padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = feature.title,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isTierEligible) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = when (feature.requiredTier) {
-                                    com.example.ministoreapp.domain.AppTier.FREE -> Color(0xFF10B981).copy(alpha = 0.15f)
-                                    com.example.ministoreapp.domain.AppTier.STANDARD -> Color(0xFF3B82F6).copy(alpha = 0.15f)
-                                    com.example.ministoreapp.domain.AppTier.PRO -> Color(0xFF8B5CF6).copy(alpha = 0.15f)
-                                }
-                            ) {
-                                Text(
-                                    text = feature.requiredTier.name,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = when (feature.requiredTier) {
-                                        com.example.ministoreapp.domain.AppTier.FREE -> Color(0xFF10B981)
-                                        com.example.ministoreapp.domain.AppTier.STANDARD -> Color(0xFF3B82F6)
-                                        com.example.ministoreapp.domain.AppTier.PRO -> Color(0xFF8B5CF6)
-                                    },
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
+                        Text(
+                            text = feature.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                         Text(
                             text = feature.description,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isTierEligible) 1f else 0.5f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Switch(
-                        checked = isTierEligible && isUserEnabled,
+                        checked = isUserEnabled,
                         onCheckedChange = {
-                            if (isTierEligible) {
-                                com.example.ministoreapp.domain.FeatureFlagManager.setUserFeatureToggle(context, feature, it)
-                            } else {
-                                Toast.makeText(context, "🔒 Available in SariCloud ${feature.requiredTier.name} (Monthly Subscription - 1-Month Free Pro Trial Available)", Toast.LENGTH_LONG).show()
-                            }
-                        },
-                        enabled = isTierEligible
+                            com.example.ministoreapp.domain.FeatureFlagManager.setUserFeatureToggle(context, feature, it)
+                        }
+
                     )
                 }
             }

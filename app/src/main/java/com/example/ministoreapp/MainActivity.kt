@@ -355,6 +355,7 @@ class MainActivity : ComponentActivity() {
         var showSettingsPinPrompt by remember { mutableStateOf(false) }
         var activeSettingsDetailView by remember { mutableStateOf<String?>(null) }
         var externalBarcode by remember { mutableStateOf<String?>(null) }
+        var pendingNewProductBarcode by remember { mutableStateOf<String?>(null) }
 
         // App Launch Security PIN Check
         if (settings.pinOnAppLaunchEnabled && !isAppUnlocked) {
@@ -715,9 +716,11 @@ class MainActivity : ComponentActivity() {
                         },
                         onCheckoutCashSale = { items, total, cashTendered, change ->
                             lifecycleScope.launch {
-                                items.forEach { cartItem ->
-                                    val newStock = (cartItem.product.stockQty - cartItem.quantity).coerceAtLeast(0)
-                                    db.productDao().updateProduct(cartItem.product.copy(stockQty = newStock, updatedAt = System.currentTimeMillis()))
+                                if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.INVENTORY_TRACKING)) {
+                                    items.forEach { cartItem ->
+                                        val newStock = (cartItem.product.stockQty - cartItem.quantity).coerceAtLeast(0)
+                                        db.productDao().updateProduct(cartItem.product.copy(stockQty = newStock, updatedAt = System.currentTimeMillis()))
+                                    }
                                 }
                                 val summary = items.joinToString(", ") { "${it.product.name} x${it.quantity}" }
                                 val firstCashier = cashiers.firstOrNull()
@@ -749,7 +752,8 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(this@MainActivity, "Select customer in Credit tab to issue credit...", Toast.LENGTH_SHORT).show()
                         },
                         onAddNewProductRequested = { scannedBarcode ->
-                            externalBarcode = scannedBarcode
+                            externalBarcode = null
+                            pendingNewProductBarcode = scannedBarcode
                             activeSettingsDetailView = "PRODUCTS"
                             currentTab = TabScreen.Settings
                             Toast.makeText(this@MainActivity, "Opening Add Product for barcode '$scannedBarcode'...", Toast.LENGTH_SHORT).show()
@@ -989,7 +993,8 @@ class MainActivity : ComponentActivity() {
                         activeDetailView = activeSettingsDetailView,
                         onActiveDetailViewChange = { activeSettingsDetailView = it },
                         securitySettings = securitySettings,
-                        initialBarcode = externalBarcode ?: "",
+                        initialBarcode = pendingNewProductBarcode ?: "",
+                        onPendingBarcodeConsumed = { pendingNewProductBarcode = null },
                         products = products,
                         productGroups = productGroups,
                         cashiers = cashiers,

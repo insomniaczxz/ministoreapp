@@ -58,11 +58,44 @@ data class VariantGroupModel(
     val priceOptions: List<ProductEntity>
 )
 
+data class SizeVariantModel(
+    val unitSizeLabel: String,
+    val variantGroup: VariantGroupModel
+)
+
+data class CombinedProductGroupModel(
+    val key: String,
+    val title: String,
+    val category: String,
+    val brand: String,
+    val sizeVariants: List<SizeVariantModel>
+)
+
 fun extractCleanVariantTitle(name: String): String {
     return name
         .replace(Regex("""\s*\(COLD\)""", RegexOption.IGNORE_CASE), "")
         .replace(Regex("""\s*\(\d+\s*[^)]+\)"""), "")
         .trim()
+}
+
+fun extractBaseTitle(name: String, unitSize: String = ""): String {
+    var clean = name.trim()
+
+    // 1. Strip packaging suffixes like (1 pcs), (1 Case), (3 for ₱5), (COLD), etc.
+    clean = clean.replace(Regex("""\s*\(\d+\s*[^)]+\)""", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("""\s*\(COLD\)""", RegexOption.IGNORE_CASE), "")
+        .trim()
+
+    // 2. If unitSize is provided and present in clean title, strip unitSize
+    if (unitSize.isNotBlank()) {
+        clean = clean.replace(Regex("""\b""" + Regex.escape(unitSize.trim()) + """\b""", RegexOption.IGNORE_CASE), "").trim()
+    }
+
+    // 3. Strip trailing size tokens like 100g, 200g, 1.5L, 500ml, 1kg, 8oz, 1L, etc.
+    val sizeRegex = Regex("""\s*\b\d+(\.\d+)?\s*(g|kg|ml|l|liter|liters|oz|pcs|pc|pack|sachet|mismo|kasalo|tie)\b\s*$""", RegexOption.IGNORE_CASE)
+    clean = clean.replace(sizeRegex, "").trim()
+
+    return clean.ifBlank { name.trim() }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,6 +181,49 @@ fun SearchScreen(
         }
     }
 
+    val combinedVariantGroups = remember(filteredVariantGroups) {
+        val map = LinkedHashMap<String, MutableList<VariantGroupModel>>()
+        for (vGroup in filteredVariantGroups) {
+            val firstOpt = vGroup.priceOptions.firstOrNull()
+            val uSize = vGroup.priceOptions.map { it.unitSize }.firstOrNull { it.isNotBlank() } ?: firstOpt?.unitSize.orEmpty()
+            val baseTitle = extractBaseTitle(vGroup.title, uSize)
+            val groupKey = "${baseTitle.lowercase()}_${vGroup.category.trim().lowercase()}"
+            map.getOrPut(groupKey) { mutableListOf() }.add(vGroup)
+        }
+
+        map.map { (key, groupList) ->
+            val first = groupList.first()
+            val firstOpt = first.priceOptions.firstOrNull()
+            val uSize = first.priceOptions.map { it.unitSize }.firstOrNull { it.isNotBlank() } ?: firstOpt?.unitSize.orEmpty()
+            val baseTitle = extractBaseTitle(first.title, uSize)
+
+            val sizeVariants = groupList.map { vg ->
+                val opt = vg.priceOptions.firstOrNull()
+                val rawLabel = vg.priceOptions.map { it.unitSize }.firstOrNull { it.isNotBlank() }
+                    ?: opt?.unitSize?.ifBlank { null }
+                    ?: run {
+                        val sizeMatch = Regex("""\b\d+(\.\d+)?\s*(g|kg|ml|l|liter|liters|oz|pcs|pc|pack|sachet|mismo|kasalo)\b""", RegexOption.IGNORE_CASE).find(vg.title)
+                        sizeMatch?.value
+                    }
+                    ?: "Standard"
+                SizeVariantModel(
+                    unitSizeLabel = rawLabel,
+                    variantGroup = vg
+                )
+            }.sortedBy { sv ->
+                sv.variantGroup.priceOptions.minOfOrNull { it.sellingPrice } ?: 0.0
+            }
+
+            CombinedProductGroupModel(
+                key = key,
+                title = baseTitle,
+                category = first.category,
+                brand = first.brand,
+                sizeVariants = sizeVariants
+            )
+        }
+    }
+
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
     Column(
@@ -221,7 +297,7 @@ fun SearchScreen(
             ) {
                 // Left 60% Pane: Product Grid
                 Box(modifier = Modifier.weight(0.6f).fillMaxHeight()) {
-                    if (filteredVariantGroups.isEmpty()) {
+                    if (combinedVariantGroups.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("No products matching '$searchQuery'", style = MaterialTheme.typography.titleMedium)
                         }
@@ -232,20 +308,37 @@ fun SearchScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(items = filteredVariantGroups, key = { it.key }) { variantGroup ->
-                                VariantSearchCard(
-                                    group = variantGroup,
-                                    productGroups = productGroups,
-                                    onRestockClick = { selectedVariantForRestock = variantGroup },
-                                    onAddToCart = { prod, title, price ->
-                                        val idx = cartItems.indexOfFirst { it.product.id == prod.id && it.selectedOptionTitle == title }
-                                        if (idx >= 0) {
-                                            cartItems[idx] = cartItems[idx].copy(quantity = cartItems[idx].quantity + 1)
-                                        } else {
-                                            cartItems.add(PosCartItem(product = prod, selectedOptionTitle = title, unitPrice = price))
+                            items(items = combinedVariantGroups, key = { it.key }) { combinedGroup ->
+                                if (combinedGroup.sizeVariants.size == 1) {
+                                    val singleVg = combinedGroup.sizeVariants.first().variantGroup
+                                    VariantSearchCard(
+                                        group = singleVg,
+                                        productGroups = productGroups,
+                                        onRestockClick = { selectedVariantForRestock = singleVg },
+                                        onAddToCart = { prod, title, price ->
+                                            val idx = cartItems.indexOfFirst { it.product.id == prod.id && it.selectedOptionTitle == title }
+                                            if (idx >= 0) {
+                                                cartItems[idx] = cartItems[idx].copy(quantity = cartItems[idx].quantity + 1)
+                                            } else {
+                                                cartItems.add(PosCartItem(product = prod, selectedOptionTitle = title, unitPrice = price))
+                                            }
                                         }
-                                    }
-                                )
+                                    )
+                                } else {
+                                    CombinedVariantSearchCard(
+                                        combinedGroup = combinedGroup,
+                                        productGroups = productGroups,
+                                        onRestockClick = { targetVg -> selectedVariantForRestock = targetVg },
+                                        onAddToCart = { prod, title, price ->
+                                            val idx = cartItems.indexOfFirst { it.product.id == prod.id && it.selectedOptionTitle == title }
+                                            if (idx >= 0) {
+                                                cartItems[idx] = cartItems[idx].copy(quantity = cartItems[idx].quantity + 1)
+                                            } else {
+                                                cartItems.add(PosCartItem(product = prod, selectedOptionTitle = title, unitPrice = price))
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -270,7 +363,7 @@ fun SearchScreen(
             // Standard Phone / Non-Split View
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    if (filteredVariantGroups.isEmpty()) {
+                    if (combinedVariantGroups.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("No products matching '$searchQuery'", style = MaterialTheme.typography.titleMedium)
                         }
@@ -281,20 +374,37 @@ fun SearchScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(items = filteredVariantGroups, key = { it.key }) { variantGroup ->
-                                VariantSearchCard(
-                                    group = variantGroup,
-                                    productGroups = productGroups,
-                                    onRestockClick = { selectedVariantForRestock = variantGroup },
-                                    onAddToCart = { prod, title, price ->
-                                        val idx = cartItems.indexOfFirst { it.product.id == prod.id && it.selectedOptionTitle == title }
-                                        if (idx >= 0) {
-                                            cartItems[idx] = cartItems[idx].copy(quantity = cartItems[idx].quantity + 1)
-                                        } else {
-                                            cartItems.add(PosCartItem(product = prod, selectedOptionTitle = title, unitPrice = price))
+                            items(items = combinedVariantGroups, key = { it.key }) { combinedGroup ->
+                                if (combinedGroup.sizeVariants.size == 1) {
+                                    val singleVg = combinedGroup.sizeVariants.first().variantGroup
+                                    VariantSearchCard(
+                                        group = singleVg,
+                                        productGroups = productGroups,
+                                        onRestockClick = { selectedVariantForRestock = singleVg },
+                                        onAddToCart = { prod, title, price ->
+                                            val idx = cartItems.indexOfFirst { it.product.id == prod.id && it.selectedOptionTitle == title }
+                                            if (idx >= 0) {
+                                                cartItems[idx] = cartItems[idx].copy(quantity = cartItems[idx].quantity + 1)
+                                            } else {
+                                                cartItems.add(PosCartItem(product = prod, selectedOptionTitle = title, unitPrice = price))
+                                            }
                                         }
-                                    }
-                                )
+                                    )
+                                } else {
+                                    CombinedVariantSearchCard(
+                                        combinedGroup = combinedGroup,
+                                        productGroups = productGroups,
+                                        onRestockClick = { targetVg -> selectedVariantForRestock = targetVg },
+                                        onAddToCart = { prod, title, price ->
+                                            val idx = cartItems.indexOfFirst { it.product.id == prod.id && it.selectedOptionTitle == title }
+                                            if (idx >= 0) {
+                                                cartItems[idx] = cartItems[idx].copy(quantity = cartItems[idx].quantity + 1)
+                                            } else {
+                                                cartItems.add(PosCartItem(product = prod, selectedOptionTitle = title, unitPrice = price))
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -568,7 +678,7 @@ fun VariantSearchCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (totalStock > 0) {
+                    if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.INVENTORY_TRACKING) && totalStock > 0) {
                         Text(
                             text = "📦 Stock: $totalStock pcs",
                             style = MaterialTheme.typography.labelSmall,
@@ -697,6 +807,238 @@ fun VariantSearchCard(
                                 fontWeight = FontWeight.Bold,
                                 color = textCol
                             )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CombinedVariantSearchCard(
+    combinedGroup: CombinedProductGroupModel,
+    productGroups: List<ProductGroupEntity> = emptyList(),
+    onRestockClick: (VariantGroupModel) -> Unit,
+    onAddToCart: (product: ProductEntity, optionTitle: String, price: Double) -> Unit = { _, _, _ -> }
+) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.ui.graphics.Color(0xFFFFFFFF)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 2.dp),
+        border = BorderStroke(1.dp, if (isDark) MaterialTheme.colorScheme.outlineVariant else androidx.compose.ui.graphics.Color(0xFFE5E7EB))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Header Row: Product Name & Category Badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = combinedGroup.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+
+                if (combinedGroup.category.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Text(
+                            text = combinedGroup.category,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            // Size Sub-Rows
+            combinedGroup.sizeVariants.forEachIndexed { index, sizeVariant ->
+                if (index > 0) {
+                    HorizontalDivider(color = if (isDark) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f) else androidx.compose.ui.graphics.Color(0xFFE5E7EB))
+                }
+
+                val vg = sizeVariant.variantGroup
+                val firstOpt = vg.priceOptions.firstOrNull()
+                val parentGroup = remember(firstOpt, productGroups) {
+                    productGroups.find { it.id == firstOpt?.groupId }
+                }
+                val totalStock = vg.priceOptions.sumOf { it.stockQty }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Size Badge + Stock + Restock Button Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = sizeVariant.unitSizeLabel,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.INVENTORY_TRACKING) && totalStock > 0) {
+                                Text(
+                                    text = "📦 Stock: $totalStock pcs",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        if (com.example.ministoreapp.domain.FeatureFlagManager.isFeatureActive(com.example.ministoreapp.domain.AppFeature.RESTOCK_MODULE)) {
+                            FilledTonalButton(
+                                onClick = { onRestockClick(vg) },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Inventory2,
+                                    contentDescription = "Restock",
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Restock", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    // Price Chips Row
+                    val badges = remember(vg.priceOptions, parentGroup) {
+                        val list = mutableListOf<Triple<String, String, String>>()
+                        val sorted = vg.priceOptions.sortedBy { option ->
+                            when (option.variantType) {
+                                "COLD_RETAIL" -> 1
+                                "RETAIL" -> 2
+                                "COLD_WHOLESALE" -> 3
+                                "WHOLESALE" -> 4
+                                else -> 5
+                            }
+                        }
+                        for (option in sorted) {
+                            when (option.variantType) {
+                                "WHOLESALE" -> list.add(Triple("📦", "₱${option.sellingPrice.roundToInt()} (${option.unit.ifBlank { "Case" }})", "WHOLESALE"))
+                                "COLD_WHOLESALE" -> list.add(Triple("🧊", "₱${option.sellingPrice.roundToInt()} (Cold Case)", "COLD_WHOLESALE"))
+                                "COLD_RETAIL" -> list.add(Triple("❄️", "₱${option.sellingPrice.roundToInt()} (Cold)", "COLD_RETAIL"))
+                                else -> {
+                                    if (parentGroup != null && parentGroup.bundlePrice > 0) {
+                                        list.add(Triple("🛍️", "${parentGroup.bundleQty} for ₱${parentGroup.bundlePrice.roundToInt()} (Bundle)", "BUNDLE"))
+                                        list.add(Triple("🏷️", "₱${option.sellingPrice.roundToInt()} / pc", "RETAIL"))
+                                    } else {
+                                        list.add(Triple("🏷️", "₱${option.sellingPrice.roundToInt()}", "RETAIL"))
+                                    }
+                                }
+                            }
+                        }
+                        list
+                    }
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(badges) { (badgeIcon, badgeLabel, badgeType) ->
+                            val (bgFill, borderCol, textCol) = when (badgeType) {
+                                "COLD_RETAIL" -> if (isDark) {
+                                    Triple(Color(0xFF38BDF8).copy(alpha = 0.15f), Color(0xFF38BDF8).copy(alpha = 0.75f), Color(0xFF7DD3FC))
+                                } else {
+                                    Triple(Color(0xFF0284C7).copy(alpha = 0.12f), Color(0xFF0284C7).copy(alpha = 0.65f), Color(0xFF0369A1))
+                                }
+                                "COLD_WHOLESALE" -> if (isDark) {
+                                    Triple(Color(0xFF818CF8).copy(alpha = 0.16f), Color(0xFF818CF8).copy(alpha = 0.80f), Color(0xFFA5B4FC))
+                                } else {
+                                    Triple(Color(0xFF6366F1).copy(alpha = 0.12f), Color(0xFF6366F1).copy(alpha = 0.65f), Color(0xFF4338CA))
+                                }
+                                "BUNDLE" -> if (isDark) {
+                                    Triple(Color(0xFF4ADE80).copy(alpha = 0.15f), Color(0xFF4ADE80).copy(alpha = 0.75f), Color(0xFF86EFAC))
+                                } else {
+                                    Triple(Color(0xFF22C55E).copy(alpha = 0.14f), Color(0xFF16A34A).copy(alpha = 0.65f), Color(0xFF15803D))
+                                }
+                                "WHOLESALE" -> if (isDark) {
+                                    Triple(Color(0xFFFACC15).copy(alpha = 0.15f), Color(0xFFFACC15).copy(alpha = 0.75f), Color(0xFFFDE047))
+                                } else {
+                                    Triple(Color(0xFFEAB308).copy(alpha = 0.16f), Color(0xFFD97706).copy(alpha = 0.65f), Color(0xFFB45309))
+                                }
+                                else -> if (isDark) {
+                                    Triple(Color(0xFFFFFFFF).copy(alpha = 0.06f), Color(0xFF49454F), Color(0xFFF3F4F6))
+                                } else {
+                                    Triple(Color(0xFF000000).copy(alpha = 0.05f), Color(0xFFCAC4D0), Color(0xFF111827))
+                                }
+                            }
+
+                            val targetOpt = vg.priceOptions.find {
+                                when (badgeType) {
+                                    "WHOLESALE" -> it.variantType == "WHOLESALE"
+                                    "COLD_WHOLESALE" -> it.variantType == "COLD_WHOLESALE"
+                                    "COLD_RETAIL" -> it.variantType == "COLD_RETAIL"
+                                    else -> it.variantType == "RETAIL" || it.variantType == null
+                                }
+                            } ?: vg.priceOptions.first()
+
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = bgFill,
+                                border = BorderStroke(1.dp, borderCol),
+                                modifier = Modifier.clickable {
+                                    onAddToCart(targetOpt, badgeLabel, targetOpt.sellingPrice)
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(badgeIcon, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        text = badgeLabel,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = textCol
+                                    )
+                                }
+                            }
                         }
                     }
                 }
